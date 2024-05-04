@@ -6,6 +6,9 @@ repository = "https://github.com/gordnzhou/nes-emulator.git"
 edition = "2021"
 build = "build.rs"
 
+[dependencies]
+lazy_static = "1.4.0"
+
 [dependencies.sdl2]
 version = "0.36"
 features = ["use_mac_framework"]
