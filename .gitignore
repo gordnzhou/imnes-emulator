@@ -2,4 +2,5 @@
 Cargo.lock
 /.vscode
 /DS_Store
+/logs
 .DS_Store

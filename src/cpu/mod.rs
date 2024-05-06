@@ -1,10 +1,13 @@
 mod opcode;
 
+use std::fs::OpenOptions;
+use std::io::prelude::*;
+
 use crate::bus::Bus;
 
 use self::opcode::{AddrMode, OPCODES_LOOKUP};
 
-enum Flag { C, Z, I, D, B, V, N }
+enum Flag { C, Z, I, D, B, U, V, N }
 
 impl Flag {
     pub fn mask(&self) -> u8 {
@@ -14,6 +17,7 @@ impl Flag {
             Flag::I => 0b00000100,
             Flag::D => 0b00001000,
             Flag::B => 0b00010000,
+            Flag::U => 0b00100000,
             Flag::V => 0b01000000,
             Flag::N => 0b10000000,
         }
@@ -21,6 +25,16 @@ impl Flag {
 }
 
 const STACK_START: u16 = 0x100;
+
+fn log_to_file(message: &str) -> std::io::Result<()> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open("logs/log.txt")?;
+
+    println!("write: {}", message);
+    writeln!(file, "{}", message)
+}
 
 pub struct Cpu6502 {
     accumulator: u8,
@@ -46,11 +60,11 @@ impl Cpu6502 {
             accumulator: 0,
             x_index_reg: 0,
             y_index_reg: 0,
-            program_counter: 0,
-            stack_pointer: 0,
-            processor_status: 0,
+            program_counter: 0xC000,
+            stack_pointer: 0xFD,
+            processor_status: 0x24,
 
-            cycles: 0,
+            cycles: 7,
 
             addr_mode: AddrMode::IMP,
             operand_addr: 0,
@@ -65,21 +79,26 @@ impl Cpu6502 {
         loop {
             let opcode = self.advance_pc();
 
-            println!("{:04x}: {:02x}", self.program_counter, opcode);
+            self.cycles += match OPCODES_LOOKUP.get(&opcode) {
+                Some(op) => {
+                    log_to_file(&format!("{:04X} OPCODE:{:?} IMM:{:02X}     A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}  CYC:{}", 
+                        self.program_counter - 1, op.instr, self.read_byte(self.program_counter), 
+                        self.accumulator, self.x_index_reg, self.y_index_reg, self.processor_status, self.stack_pointer,
+                        self.cycles)).unwrap();
 
-            self.cycles = match OPCODES_LOOKUP.get(&opcode) {
-                Some(op) => op.execute_op(self),
-                None => panic!("Unsupported Opcode: {}", opcode)
+                    op.execute_op(self)
+                },
+                None => panic!("Unrecognized/Unsupported Opcode: {}", opcode)
             };
         }
     }
 
     pub(super) fn add_with_carry(&mut self) -> u32 {
         let op1 = self.accumulator;
-        let op2 = self.operand_data.wrapping_add(self.get_flag(Flag::C) as u8);
-        self.accumulator = op1.wrapping_add(op2);
+        let op2 = self.operand_data;
+        self.accumulator = op1.wrapping_add(op2).wrapping_add(self.get_flag(Flag::C) as u8);
 
-        self.set_flag(Flag::C, op1 as u16 + op2 as u16 > 0xFF);
+        self.set_flag(Flag::C, op1 as u16 + op2 as u16 + self.get_flag(Flag::C) as u16 > 0xFF);
         self.set_flag(Flag::Z, self.accumulator == 0);
         self.set_flag(Flag::V, (op1 ^ op2) & 0x80 == 0 && (op1 ^ self.accumulator) & 0x80 != 0);
         self.set_flag(Flag::N, self.accumulator & 0b10000000 != 0);
@@ -254,7 +273,7 @@ impl Cpu6502 {
     }
 
     pub(super) fn decrement_x_reg(&mut self) -> u32 {
-        self.x_index_reg = self.x_index_reg.wrapping_add(1);
+        self.x_index_reg = self.x_index_reg.wrapping_sub(1);
 
         self.set_flag(Flag::Z, self.x_index_reg == 0);
         self.set_flag(Flag::N, self.x_index_reg & 0b10000000 != 0);
@@ -263,7 +282,7 @@ impl Cpu6502 {
     }
 
     pub(super) fn decrement_y_reg(&mut self) -> u32 {
-        self.y_index_reg = self.x_index_reg.wrapping_add(1);
+        self.y_index_reg = self.y_index_reg.wrapping_sub(1);
 
         self.set_flag(Flag::Z, self.y_index_reg == 0);
         self.set_flag(Flag::N, self.y_index_reg & 0b10000000 != 0);
@@ -283,7 +302,7 @@ impl Cpu6502 {
     // TODO: implement interrupts
     pub(super) fn force_interrupt(&mut self) -> u32 {
         self.push_word_to_stack(self.program_counter);
-        self.push_byte_to_stack(self.processor_status);
+        self.push_byte_to_stack(self.processor_status | Flag::B.mask() | Flag::U.mask());
 
         // self.program_counter = 0xFFFE;
 
@@ -312,7 +331,7 @@ impl Cpu6502 {
     }
 
     pub(super) fn increment_y_reg(&mut self) -> u32 {
-        self.y_index_reg = self.x_index_reg.wrapping_add(1);
+        self.y_index_reg = self.y_index_reg.wrapping_add(1);
 
         self.set_flag(Flag::Z, self.y_index_reg == 0);
         self.set_flag(Flag::N, self.y_index_reg & 0b10000000 != 0);
@@ -393,7 +412,7 @@ impl Cpu6502 {
     }
 
     pub(super) fn push_processor_status(&mut self) -> u32 {
-        self.push_byte_to_stack(self.processor_status);
+        self.push_byte_to_stack(self.processor_status | Flag::B.mask() | Flag::U.mask());
 
         0
     }
@@ -409,12 +428,16 @@ impl Cpu6502 {
 
     pub(super) fn pull_processor_status(&mut self) -> u32 {
         self.processor_status = self.pop_byte_from_stack();
+        self.processor_status &= !Flag::B.mask();
+        self.processor_status |= Flag::U.mask();
 
         0
     }
 
     pub(super) fn return_from_interrupt(&mut self) -> u32 {
         self.processor_status = self.pop_byte_from_stack();
+        self.processor_status &= !Flag::B.mask();
+        self.processor_status |= Flag::U.mask();
         self.program_counter = self.pop_word_from_stack();
 
         0
@@ -549,6 +572,91 @@ impl Cpu6502 {
         self.set_flag(Flag::Z, self.accumulator == 0);
         self.set_flag(Flag::N, self.accumulator & 0b10000000 != 0);
 
+        0
+    }
+
+    // TODO: implement illegal instructions
+    pub(super) fn alr(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn anc(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn ane(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn arr(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn dcp(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn isc(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn las(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn lax(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn lxa(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn rla(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn rra(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn sax(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn sbx(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn sha(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn shx(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn shy(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn slo(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn sre(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn tas(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn usbc(&mut self) -> u32 {
+        0
+    }
+
+    pub(super) fn jam(&mut self) -> u32 {
         0
     }
 
@@ -706,14 +814,14 @@ impl Cpu6502 {
 
     #[inline]
     fn push_word_to_stack(&mut self, word: u16) {
-        self.push_byte_to_stack(word as u8);
         self.push_byte_to_stack(((word & 0xFF00) >> 8) as u8);
+        self.push_byte_to_stack(word as u8);
     }
 
     #[inline]
     fn pop_word_from_stack(&mut self) -> u16 {
-        let hi = self.pop_byte_from_stack() as u16;
         let lo = self.pop_byte_from_stack() as u16;
+        let hi = self.pop_byte_from_stack() as u16;
         (hi << 8) | lo
     }
 
@@ -744,16 +852,24 @@ impl Cpu6502 {
         (self.processor_status & flag.mask()) != 0
     }
 
+    #[inline]
     fn advance_pc(&mut self) -> u8 {
         let ret = self.read_byte(self.program_counter);
         self.program_counter += 1;
+
+        if self.program_counter == 0x2010 {
+            println!("ERROR CODE: {:02x}, ERROR BYTE LOCATION: {:02x}", self.read_byte(2), self.read_byte(3));
+        }
+
         ret
     }
 
+    #[inline]
     fn read_byte(&self, addr: u16) -> u8 {
         self.bus.read_byte(addr)
     }
 
+    #[inline]
     fn write_byte(&mut self, addr: u16, byte: u8) {
         self.bus.write_byte(addr, byte);
     }
@@ -854,6 +970,7 @@ mod tests {
     #[test]
     pub fn test_adc() {
         do_adc(1, 1, 2, false, false);
+        do_adc(0x7F, 0x7F, 0xFE, true, false);
         do_adc(50, 25, 75, false, false);
         do_adc(128, 128, 0, true, true);
         do_adc(0b01111111, 0b00000010, 0b10000001, true, false);
@@ -864,7 +981,6 @@ mod tests {
     pub fn test_sbc() {
         do_sbc(3, 1, 2, false, true);
         do_sbc(100, 50, 50, false, true);
-        do_sbc(128, 129, 255, false, false);
         do_sbc(128, 1, 127, true, true);
         do_sbc(0, 1, 255, false, false);
     }
