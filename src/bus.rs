@@ -1,15 +1,15 @@
 
 const MEM_SIZE: usize = 0x10000;
-const RAM_START: usize = 0x0000;
-const RAM_END: usize = 0x07FF;
-const RAM_MIRROR_START: usize = 0x0800;
-const RAM_MIRROR_END: usize = 0x1FFF;
-const IO_START: usize = 0x2000;
-const IO_END: usize = 0x401F;
-const EXP_ROM_START: usize = 0x4020;
-const EXP_ROM_END: usize = 0x5FFF;
-const SRAM_START: usize = 0x6000;
-const SRAM_END: usize = 0x7FFF;
+// const RAM_START: usize = 0x0000;
+// const RAM_END: usize = 0x07FF;
+// const RAM_MIRROR_START: usize = 0x0800;
+// const RAM_MIRROR_END: usize = 0x1FFF;
+// const IO_START: usize = 0x2000;
+// const IO_END: usize = 0x401F;
+// const EXP_ROM_START: usize = 0x4020;
+// const EXP_ROM_END: usize = 0x5FFF;
+// const SRAM_START: usize = 0x6000;
+// const SRAM_END: usize = 0x7FFF;
 const PRG_ROM_START: usize = 0x8000;
 const PRG_ROM_END: usize = 0xFFFF;
 
@@ -24,6 +24,7 @@ impl Bus {
         }
     }
 
+    #[allow(dead_code)]
     pub fn load_memory(&mut self, data: &[u8]) {
         assert!(data.len() <= MEM_SIZE);
 
@@ -43,13 +44,5 @@ impl Bus {
 
     pub fn write_byte(&mut self, addr: u16, byte: u8) {
         self.memory[addr as usize] = byte;
-    }
-
-    pub fn read_io_register(&self, addr: u16) -> u8 {
-        0
-    }
-
-    pub fn write_io_register(&mut self, addr: u16, byte: u8) {
-        
     }
 }

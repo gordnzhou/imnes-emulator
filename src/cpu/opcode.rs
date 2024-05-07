@@ -18,7 +18,7 @@ pub enum Instr {
     RTS, SBC, SEC, SED, SEI, STA, STX, STY, TAX, TAY, TSX, TXA, TXS, TYA,
 
     // Unofficial / Illegal Opcodes
-    ALR, ANC, ANE, ARR, DCP, ISC, LAS, LAX, LXA, RLA, RRA, SAX, SBX, SHA, 
+    ALR, ANC, ANE, ARR, DCP, ISC, LAS, LAX, RLA, RRA, SAX, SBX, SHA, 
     SHX, SHY, SLO, SRE, TAS, USBC, JAM,
 }
 
@@ -123,7 +123,6 @@ impl Opcode {
             Instr::ISC => Cpu6502::isc,
             Instr::LAS => Cpu6502::las,
             Instr::LAX => Cpu6502::lax,
-            Instr::LXA => Cpu6502::lxa,
             Instr::RLA => Cpu6502::rla,
             Instr::RRA => Cpu6502::rra,
             Instr::SAX => Cpu6502::sax, 
@@ -360,7 +359,6 @@ lazy_static! {
         Opcode::new(0x98, AddrMode::IMP, Instr::TYA, 2, false),
 
         
-        
         // Illegal/Unoffical Opcodes
         Opcode::new(0x4B, AddrMode::IMM, Instr::ALR, 2, true),
 
@@ -389,14 +387,13 @@ lazy_static! {
 
         Opcode::new(0xBB, AddrMode::IMM, Instr::LAS, 2, true),
 
+        Opcode::new(0xAB, AddrMode::IMM, Instr::LAX, 2, true),
         Opcode::new(0xA7, AddrMode::ZPG, Instr::LAX, 3, true),
         Opcode::new(0xB7, AddrMode::ZPY, Instr::LAX, 4, true),
         Opcode::new(0xAF, AddrMode::ABS, Instr::LAX, 4, true),
         Opcode::new(0xBF, AddrMode::ABY, Instr::LAX, 4, true),
         Opcode::new(0xA3, AddrMode::INX, Instr::LAX, 6, true),
         Opcode::new(0xB3, AddrMode::INY, Instr::LAX, 5, true),
-
-        Opcode::new(0xAB, AddrMode::IMM, Instr::LXA, 2, true),
 
         Opcode::new(0x27, AddrMode::ZPG, Instr::RLA, 5, true),
         Opcode::new(0x37, AddrMode::ZPX, Instr::RLA, 6, true),
@@ -447,6 +444,34 @@ lazy_static! {
         Opcode::new(0x9B, AddrMode::ABY, Instr::TAS, 5, true),
 
         Opcode::new(0xEB, AddrMode::IMM, Instr::USBC, 2, true),
+
+        Opcode::new(0x1A, AddrMode::IMP, Instr::NOP, 2, true),
+        Opcode::new(0x3A, AddrMode::IMP, Instr::NOP, 2, true),
+        Opcode::new(0x5A, AddrMode::IMP, Instr::NOP, 2, true),
+        Opcode::new(0x7A, AddrMode::IMP, Instr::NOP, 2, true),
+        Opcode::new(0xDA, AddrMode::IMP, Instr::NOP, 2, true),
+        Opcode::new(0xFA, AddrMode::IMP, Instr::NOP, 2, true),
+        Opcode::new(0x80, AddrMode::IMM, Instr::NOP, 2, true),
+        Opcode::new(0x82, AddrMode::IMM, Instr::NOP, 2, true),
+        Opcode::new(0x89, AddrMode::IMM, Instr::NOP, 2, true),
+        Opcode::new(0xC2, AddrMode::IMM, Instr::NOP, 2, true),
+        Opcode::new(0xE2, AddrMode::IMM, Instr::NOP, 2, true),
+        Opcode::new(0x04, AddrMode::ZPG, Instr::NOP, 3, true),
+        Opcode::new(0x44, AddrMode::ZPG, Instr::NOP, 3, true),
+        Opcode::new(0x64, AddrMode::ZPG, Instr::NOP, 3, true),
+        Opcode::new(0x14, AddrMode::ZPX, Instr::NOP, 4, true),
+        Opcode::new(0x34, AddrMode::ZPX, Instr::NOP, 4, true),
+        Opcode::new(0x54, AddrMode::ZPX, Instr::NOP, 4, true),
+        Opcode::new(0x74, AddrMode::ZPX, Instr::NOP, 4, true),
+        Opcode::new(0xD4, AddrMode::ZPX, Instr::NOP, 4, true),
+        Opcode::new(0xF4, AddrMode::ZPX, Instr::NOP, 4, true),
+        Opcode::new(0x0C, AddrMode::ABS, Instr::NOP, 4, true),
+        Opcode::new(0x1C, AddrMode::ABX, Instr::NOP, 4, true),
+        Opcode::new(0x3C, AddrMode::ABX, Instr::NOP, 4, true),
+        Opcode::new(0x5C, AddrMode::ABX, Instr::NOP, 4, true),
+        Opcode::new(0x7C, AddrMode::ABX, Instr::NOP, 4, true),
+        Opcode::new(0xDC, AddrMode::ABX, Instr::NOP, 4, true),
+        Opcode::new(0xFC, AddrMode::ABX, Instr::NOP, 4, true),
 
         Opcode::new(0x02, AddrMode::IMP, Instr::JAM, 2, true),
         Opcode::new(0x12, AddrMode::IMP, Instr::JAM, 2, true),
