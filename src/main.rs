@@ -5,11 +5,15 @@ extern crate lazy_static;
 
 mod cpu;
 mod bus;
+mod cartridge;
+mod ppu;
 
+use bus::Bus;
+use cartridge::CartridgeNes;
 use cpu::Cpu6502;
+use ppu::Ppu2C03;
 use std::fs::read;
 
-use crate::bus::Bus;
 use std::io::Write;
 use std::fs::OpenOptions;
 
@@ -31,10 +35,28 @@ fn main() {
     };
 
     clear_log_file().unwrap();
+    let mut total_cycles: u32 = 0;
 
-    let mut bus = Bus::new();
-    bus.load_rom(&data);
+    let cartridge = CartridgeNes::from_ines_bytes(&data);
 
-    let mut cpu = Cpu6502::new(bus);
-    cpu.execute();
+    let mut bus = Bus::new(cartridge);
+
+    let mut cpu = Cpu6502::new();
+    let mut ppu = Ppu2C03::new();
+
+    cpu.reset(&mut bus);
+    
+    loop {
+        ppu.clock(&mut bus);
+    
+        if total_cycles % 3 == 0 {
+            cpu.clock(&mut bus);
+        }
+
+        if ppu.nmi_requested() {
+            cpu.nmi(&mut bus);
+        }
+
+        total_cycles = total_cycles.wrapping_add(1);
+    }
 }
