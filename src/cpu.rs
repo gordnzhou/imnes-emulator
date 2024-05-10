@@ -11,24 +11,37 @@ const STACK_START: u16 = 0x100;
 const ILLEGAL_OPCODES_ENABLED: bool = true;
 
 // TODO: temporary for nestest
-const STARTING_PC: u16 = 0xC000;
+// const STARTING_PC: u16 = 0xC000;
 
-enum Flag { C, Z, I, D, B, U, V, N }
+// enum StatusFlag { C, Z, I, D, B, U, V, N }
 
-impl Flag {
-    pub fn mask(&self) -> u8 {
-        match self {
-            Flag::C => 0b00000001,
-            Flag::Z => 0b00000010,
-            Flag::I => 0b00000100,
-            Flag::D => 0b00001000,
-            Flag::B => 0b00010000,
-            Flag::U => 0b00100000,
-            Flag::V => 0b01000000,
-            Flag::N => 0b10000000,
-        }
+bitflags! {
+    struct StatusFlag: u8 {
+        const C = 0b00000001;
+        const Z = 0b00000010;
+        const I = 0b00000100;
+        const D = 0b00001000;
+        const B = 0b00010000;
+        const U = 0b00100000;
+        const V = 0b01000000;
+        const N = 0b10000000;
     }
 }
+
+// impl StatusFlag {
+//     pub fn mask(&self) -> u8 {
+//         match self {
+//             StatusFlag::C => 0b00000001,
+//             StatusFlag::Z => 0b00000010,
+//             StatusFlag::I => 0b00000100,
+//             StatusFlag::D => 0b00001000,
+//             StatusFlag::B => 0b00010000,
+//             StatusFlag::U => 0b00100000,
+//             StatusFlag::V => 0b01000000,
+//             StatusFlag::N => 0b10000000,
+//         }
+//     }
+// }
 
 pub struct Cpu6502 {
     accumulator: u8,
@@ -100,7 +113,7 @@ impl Cpu6502 {
 
     #[allow(dead_code)]
     pub fn irq(&mut self, bus: &mut Bus) {
-        if self.get_flag(Flag::I) {
+        if self.get_flag(StatusFlag::I) {
             return;
         }
 
@@ -127,20 +140,20 @@ impl Cpu6502 {
         let hi = self.read_byte(bus, reset_vector + 1) as u16;
         self.program_counter = (hi << 8) | lo;
 
-        self.program_counter = STARTING_PC;
+        // self.program_counter = STARTING_PC;
 
         self.cycles += 8;
     }
     
     fn trigger_interrupt(&mut self, bus: &mut Bus, vector_addr: u16, brk_caused: bool) {
         if brk_caused {
-            self.processor_status |= Flag::B.mask();
+            self.processor_status |= StatusFlag::B.bits();
         } else {
-            self.processor_status &= !Flag::B.mask();
-            self.processor_status |= Flag::I.mask();
+            self.processor_status &= !StatusFlag::B.bits();
+            self.processor_status |= StatusFlag::I.bits();
         }
 
-        self.processor_status |= Flag::U.mask();
+        self.processor_status |= StatusFlag::U.bits();
 
         self.push_word_to_stack(bus, self.program_counter);
         self.push_byte_to_stack(bus, self.processor_status);
@@ -154,10 +167,10 @@ impl Cpu6502 {
     pub(super) fn add_with_carry(&mut self, bus: &mut Bus) -> u32 {
         let op1 = self.accumulator;
         let op2 = self.read_operand(bus);
-        self.accumulator = op1.wrapping_add(op2).wrapping_add(self.get_flag(Flag::C) as u8);
+        self.accumulator = op1.wrapping_add(op2).wrapping_add(self.get_flag(StatusFlag::C) as u8);
 
-        self.set_flag(Flag::C, op1 as u16 + op2 as u16 + self.get_flag(Flag::C) as u16 > 0xFF);
-        self.set_flag(Flag::V, (op1 ^ op2) & 0x80 == 0 && (op1 ^ self.accumulator) & 0x80 != 0);
+        self.set_flag(StatusFlag::C, op1 as u16 + op2 as u16 + self.get_flag(StatusFlag::C) as u16 > 0xFF);
+        self.set_flag(StatusFlag::V, (op1 ^ op2) & 0x80 == 0 && (op1 ^ self.accumulator) & 0x80 != 0);
         self.set_z_and_n_flag(self.accumulator);
 
         self.page_crossed as u32
@@ -178,7 +191,7 @@ impl Cpu6502 {
         let result = data.wrapping_shl(1);
         self.write_operand(bus, result);
 
-        self.set_flag(Flag::C, data & 0b10000000 != 0);
+        self.set_flag(StatusFlag::C, data & 0b10000000 != 0);
         self.set_z_and_n_flag(result);
 
         0
@@ -186,52 +199,52 @@ impl Cpu6502 {
 
     #[inline]
     pub(super) fn branch_if_carry_clear(&mut self, bus: &mut Bus) -> u32 {
-        self.branch_if_cond(bus, !self.get_flag(Flag::C))
+        self.branch_if_cond(bus, !self.get_flag(StatusFlag::C))
     }
 
     #[inline]
     pub(super) fn branch_if_carry_set(&mut self, bus: &mut Bus) -> u32 {
-        self.branch_if_cond(bus, self.get_flag(Flag::C))
+        self.branch_if_cond(bus, self.get_flag(StatusFlag::C))
     }
 
     #[inline]
     pub(super) fn branch_if_equal(&mut self, bus: &mut Bus) -> u32 {
-        self.branch_if_cond(bus, self.get_flag(Flag::Z))
+        self.branch_if_cond(bus, self.get_flag(StatusFlag::Z))
     }
 
     #[inline]
     pub(super) fn bit_test(&mut self, bus: &mut Bus) -> u32 {
         let data = self.read_operand(bus);
-        self.set_flag(Flag::Z, self.accumulator & data == 0);
-        self.set_flag(Flag::V, data & 0b01000000 != 0);
-        self.set_flag(Flag::N, data & 0b10000000 != 0);
+        self.set_flag(StatusFlag::Z, self.accumulator & data == 0);
+        self.set_flag(StatusFlag::V, data & 0b01000000 != 0);
+        self.set_flag(StatusFlag::N, data & 0b10000000 != 0);
 
         0
     }
 
     #[inline]
     pub(super) fn branch_if_minus(&mut self, bus: &mut Bus) -> u32 {
-        self.branch_if_cond(bus, self.get_flag(Flag::N))
+        self.branch_if_cond(bus, self.get_flag(StatusFlag::N))
     }
 
     #[inline]
     pub(super) fn branch_if_not_equal(&mut self, bus: &mut Bus) -> u32 {
-        self.branch_if_cond(bus, !self.get_flag(Flag::Z))
+        self.branch_if_cond(bus, !self.get_flag(StatusFlag::Z))
     }
 
     #[inline]
     pub(super) fn branch_if_positive(&mut self, bus: &mut Bus) -> u32 {
-        self.branch_if_cond(bus, !self.get_flag(Flag::N))
+        self.branch_if_cond(bus, !self.get_flag(StatusFlag::N))
     }
 
     #[inline]
     pub(super) fn branch_if_overflow_clear(&mut self, bus: &mut Bus) -> u32 {
-        self.branch_if_cond(bus, !self.get_flag(Flag::V))
+        self.branch_if_cond(bus, !self.get_flag(StatusFlag::V))
     }
 
     #[inline]
     pub(super) fn branch_if_overflow_set(&mut self, bus: &mut Bus) -> u32 {
-        self.branch_if_cond(bus, self.get_flag(Flag::V))
+        self.branch_if_cond(bus, self.get_flag(StatusFlag::V))
     }
 
     #[inline]
@@ -247,28 +260,28 @@ impl Cpu6502 {
 
     #[inline]
     pub(super) fn clear_carry_flag(&mut self, _bus: &mut Bus) -> u32 {
-        self.set_flag(Flag::C, false);
+        self.set_flag(StatusFlag::C, false);
 
         0
     }
 
     #[inline]
     pub(super) fn clear_decimal_mode(&mut self, _bus: &mut Bus) -> u32 {
-        self.set_flag(Flag::D, false);
+        self.set_flag(StatusFlag::D, false);
         
         0
     }
 
     #[inline]
     pub(super) fn clear_interrupt_disable(&mut self, _bus: &mut Bus) -> u32 {
-        self.set_flag(Flag::I, false);
+        self.set_flag(StatusFlag::I, false);
         
         0
     }
 
     #[inline]
     pub(super) fn clear_overflow_flag(&mut self, _bus: &mut Bus) -> u32 {
-        self.set_flag(Flag::V, false);
+        self.set_flag(StatusFlag::V, false);
         
         0
     }
@@ -297,9 +310,9 @@ impl Cpu6502 {
     #[inline]
     fn compare_register(&mut self, bus: &mut Bus, register: u8) {
         let data = self.read_operand(bus);
-        self.set_flag(Flag::C, register >= data);
-        self.set_flag(Flag::Z, register == data);
-        self.set_flag(Flag::N, register.wrapping_sub(data) & 0b10000000 != 0);
+        self.set_flag(StatusFlag::C, register >= data);
+        self.set_flag(StatusFlag::Z, register == data);
+        self.set_flag(StatusFlag::N, register.wrapping_sub(data) & 0b10000000 != 0);
     }
 
     #[inline]
@@ -426,7 +439,7 @@ impl Cpu6502 {
         let result = data.wrapping_shr(1);
         self.write_operand(bus, result);
 
-        self.set_flag(Flag::C, data & 0b00000001 != 0);
+        self.set_flag(StatusFlag::C, data & 0b00000001 != 0);
         self.set_z_and_n_flag(result);
 
         0
@@ -457,7 +470,7 @@ impl Cpu6502 {
 
     #[inline]
     pub(super) fn push_processor_status(&mut self, bus: &mut Bus) -> u32 {
-        self.push_byte_to_stack(bus, self.processor_status | Flag::B.mask() | Flag::U.mask());
+        self.push_byte_to_stack(bus, self.processor_status | StatusFlag::B.bits() | StatusFlag::U.bits());
 
         0
     }
@@ -474,8 +487,8 @@ impl Cpu6502 {
     #[inline]
     pub(super) fn pull_processor_status(&mut self, bus: &mut Bus) -> u32 {
         self.processor_status = self.pop_byte_from_stack(bus);
-        self.processor_status &= !Flag::B.mask();
-        self.processor_status |= Flag::U.mask();
+        self.processor_status &= !StatusFlag::B.bits();
+        self.processor_status |= StatusFlag::U.bits();
 
         0
     }
@@ -483,8 +496,8 @@ impl Cpu6502 {
     #[inline]
     pub(super) fn return_from_interrupt(&mut self, bus: &mut Bus) -> u32 {
         self.processor_status = self.pop_byte_from_stack(bus);
-        self.processor_status &= !Flag::B.mask();
-        self.processor_status |= Flag::U.mask();
+        self.processor_status &= !StatusFlag::B.bits();
+        self.processor_status |= StatusFlag::U.bits();
         self.program_counter = self.pop_word_from_stack(bus);
 
         0
@@ -500,10 +513,10 @@ impl Cpu6502 {
     #[inline]
     pub(super) fn rotate_left(&mut self, bus: &mut Bus) -> u32 {
         let data = self.read_operand(bus);
-        let result = data.wrapping_shl(1) | (self.get_flag(Flag::C) as u8);
+        let result = data.wrapping_shl(1) | (self.get_flag(StatusFlag::C) as u8);
         self.write_operand(bus, result);
 
-        self.set_flag(Flag::C, data & 0b10000000 != 0);
+        self.set_flag(StatusFlag::C, data & 0b10000000 != 0);
         self.set_z_and_n_flag(result);
 
         0
@@ -512,10 +525,10 @@ impl Cpu6502 {
     #[inline]
     pub(super) fn rotate_right(&mut self, bus: &mut Bus) -> u32 {
         let data = self.read_operand(bus);
-        let result = data.wrapping_shr(1) | ((self.get_flag(Flag::C) as u8) << 7);
+        let result = data.wrapping_shr(1) | ((self.get_flag(StatusFlag::C) as u8) << 7);
         self.write_operand(bus, result);
 
-        self.set_flag(Flag::C, data & 0b00000001 != 0);
+        self.set_flag(StatusFlag::C, data & 0b00000001 != 0);
         self.set_z_and_n_flag(result);
 
         0
@@ -523,21 +536,21 @@ impl Cpu6502 {
 
     #[inline]
     pub(super) fn set_carry_flag(&mut self, _bus: &mut Bus) -> u32 {
-        self.set_flag(Flag::C, true);
+        self.set_flag(StatusFlag::C, true);
         
         0
     }
 
     #[inline]
     pub(super) fn set_decimal_mode(&mut self, _bus: &mut Bus) -> u32 {
-        self.set_flag(Flag::D, true);
+        self.set_flag(StatusFlag::D, true);
         
         0
     }
 
     #[inline]
     pub(super) fn set_interrupt_disable(&mut self, _bus: &mut Bus) -> u32 {
-        self.set_flag(Flag::I, true);
+        self.set_flag(StatusFlag::I, true);
         
         0
     }
@@ -567,16 +580,16 @@ impl Cpu6502 {
     pub(super) fn subtract_with_carry(&mut self, bus: &mut Bus) -> u32 {
         let op1 = self.accumulator;
         let op2 = self.read_operand(bus);
-        let op3 = 1 - self.get_flag(Flag::C) as u8;
+        let op3 = 1 - self.get_flag(StatusFlag::C) as u8;
 
         let (r1, ov1) = op1.overflowing_sub(op2);
         let (r2, ov2) = r1.overflowing_sub(op3);
         self.accumulator = r2;
 
-        self.set_flag(Flag::C, !ov1 && !ov2);
-        self.set_flag(Flag::Z, self.accumulator == 0);
-        self.set_flag(Flag::V, (op1 ^ op2) & 0x80 != 0 && (op1 ^ self.accumulator) & 0x80 != 0);
-        self.set_flag(Flag::N, self.accumulator & 0b10000000 != 0);
+        self.set_flag(StatusFlag::C, !ov1 && !ov2);
+        self.set_flag(StatusFlag::Z, self.accumulator == 0);
+        self.set_flag(StatusFlag::V, (op1 ^ op2) & 0x80 != 0 && (op1 ^ self.accumulator) & 0x80 != 0);
+        self.set_flag(StatusFlag::N, self.accumulator & 0b10000000 != 0);
 
         self.page_crossed as u32
     }
@@ -645,7 +658,7 @@ impl Cpu6502 {
     pub(super) fn anc(&mut self, bus: &mut Bus) -> u32 {
         self.and_accumulator(bus);
 
-        self.set_flag(Flag::C, self.read_operand(bus) & 0b10000000 != 0);
+        self.set_flag(StatusFlag::C, self.read_operand(bus) & 0b10000000 != 0);
         
         0
     }
@@ -662,7 +675,7 @@ impl Cpu6502 {
     #[inline]
     pub(super) fn arr(&mut self, bus: &mut Bus) -> u32 {
         self.and_accumulator(bus);
-        self.set_flag(Flag::V, (self.accumulator ^ (self.accumulator >> 1)) & 0x40 != 0);
+        self.set_flag(StatusFlag::V, (self.accumulator ^ (self.accumulator >> 1)) & 0x40 != 0);
         self.rotate_right(bus);
          
         0
@@ -725,7 +738,7 @@ impl Cpu6502 {
         let result = ((self.accumulator & self.x_index_reg) as u32).wrapping_sub(self.read_operand(bus) as u32);
         self.x_index_reg = (result & 0xFF) as u8;
 
-        self.set_flag(Flag::C, result & 0b100000000 == 0);
+        self.set_flag(StatusFlag::C, result & 0b100000000 == 0);
         self.set_z_and_n_flag(self.x_index_reg);
 
         0
@@ -984,13 +997,13 @@ impl Cpu6502 {
 
     #[inline]
     fn set_z_and_n_flag(&mut self, byte: u8) {
-        self.set_flag(Flag::Z, byte == 0);
-        self.set_flag(Flag::N, byte & 0b10000000 != 0);
+        self.set_flag(StatusFlag::Z, byte == 0);
+        self.set_flag(StatusFlag::N, byte & 0b10000000 != 0);
     }
 
     #[inline]
-    fn set_flag(&mut self, flag: Flag, val: bool) {
-        let mask = flag.mask();
+    fn set_flag(&mut self, flag: StatusFlag, val: bool) {
+        let mask = flag.bits();
         if val {
             self.processor_status |= mask;
         } else {
@@ -999,19 +1012,14 @@ impl Cpu6502 {
     }
 
     #[inline]
-    fn get_flag(&self, flag: Flag) -> bool {
-        (self.processor_status & flag.mask()) != 0
+    fn get_flag(&self, flag: StatusFlag) -> bool {
+        (self.processor_status & flag.bits()) != 0
     }
 
     #[inline]
     fn advance_pc(&mut self, bus: &mut Bus) -> u8 {
         let ret = self.read_byte(bus, self.program_counter);
         self.program_counter += 1;
-
-        if self.program_counter == 0x2010 {
-            println!("ERROR CODE: {:02x}, ERROR BYTE LOCATION: {:02x}", self.read_byte(bus, 2), self.read_byte(bus, 3));
-        }
-
         ret
     }
 
@@ -1030,13 +1038,13 @@ fn log_to_file(message: &str) -> std::io::Result<()> {
         .append(true)
         .open("logs/log.txt")?;
 
-    println!("write: {}", message);
+    // println!("write: {}", message);
     writeln!(file, "{}", message)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{bus::Bus, cartridge::CartridgeNes, cpu::Flag};
+    use crate::{bus::Bus, cartridge::CartridgeNes, cpu::StatusFlag};
     use super::{opcode::OPCODES_LOOKUP, Cpu6502};
 
     #[test]
@@ -1164,8 +1172,8 @@ mod tests {
         };
 
         assert_eq!(cpu.accumulator, result, "Incorrect Result");
-        assert_eq!(cpu.get_flag(Flag::C), carry, "Incorrect Carry Result");
-        assert_eq!(cpu.get_flag(Flag::V), overflow, "Incorrect Overflow Result");
+        assert_eq!(cpu.get_flag(StatusFlag::C), carry, "Incorrect Carry Result");
+        assert_eq!(cpu.get_flag(StatusFlag::V), overflow, "Incorrect Overflow Result");
     }
 
     pub fn do_sbc(operand1: u8, operand2: u8, result: u8, overflow: bool, carry: bool) {
@@ -1175,7 +1183,7 @@ mod tests {
         bus.load_ram(&vec![0xE9, operand2]);
 
         cpu.program_counter = 0x00;
-        cpu.set_flag(Flag::C, true);
+        cpu.set_flag(StatusFlag::C, true);
         cpu.accumulator = operand1;
 
         let opcode = cpu.advance_pc(&mut bus);
@@ -1185,7 +1193,7 @@ mod tests {
         };
 
         assert_eq!(cpu.accumulator, result, "Incorrect Result");
-        assert_eq!(cpu.get_flag(Flag::C), carry, "Incorrect Carry Result");
-        assert_eq!(cpu.get_flag(Flag::V), overflow, "Incorrect Overflow Result");
+        assert_eq!(cpu.get_flag(StatusFlag::C), carry, "Incorrect Carry Result");
+        assert_eq!(cpu.get_flag(StatusFlag::V), overflow, "Incorrect Overflow Result");
     }
 }

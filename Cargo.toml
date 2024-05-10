@@ -8,6 +8,7 @@ build = "build.rs"
 
 [dependencies]
 lazy_static = "1.4.0"
+bitflags = "2.5.0"
 
 [dependencies.sdl2]
 version = "0.36"
