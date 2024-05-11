@@ -1,11 +1,15 @@
 use crate::bus::DMA_REG_ADDR;
 use crate::cartridge::{CartridgeNes, Mirroring};
 
-use super::{PpuCtrl, PpuMask, PpuStatus};
+use super::registers::{LoopyPpuReg, PpuCtrl, PpuMask, PpuStatus};
 
 const PATTERN_TABLE_START: usize = 0x0000;
 const PATTERN_TABLE_END: usize = 0x1FFF;
+
 pub const NAME_TABLE_START: usize = 0x2000;
+
+pub const ATTR_TABLE_START: usize = 0x23C0;
+
 const NAME_TABLE_END: usize = 0x3EFF;
 
 pub const PALETTE_TABLE_START: usize = 0x3F00;
@@ -19,17 +23,20 @@ pub struct PpuBus {
     name_table: [[u8; NAME_TABLE_SIZE]; 2],
     palette_table: [u8; PALETTE_TABLE_SIZE],
 
-    ppu_ctrl: PpuCtrl,
-    ppu_mask: PpuMask,
-    ppu_status: PpuStatus,
-    oam_addr_reg: u8,
-    oam_data_reg: u8,
-    scroll_reg: u8,
-    dma_addr_reg: u8,
+    pub ctrl: PpuCtrl,
+    pub mask: PpuMask,
+    pub status: PpuStatus,
+    pub oam_addr_reg: u8,
+    pub oam_data_reg: u8,
+    pub scroll_reg: u8,
+    pub dma_addr_reg: u8,
 
     ppu_addr_latch: bool,
     ppu_data_buffer: u8,
-    ppu_addr_buffer: u16,
+
+    pub vram_addr: LoopyPpuReg,
+    pub tram_addr: LoopyPpuReg,
+    pub fine_x: u8,
 }
 
 impl PpuBus {
@@ -38,9 +45,9 @@ impl PpuBus {
             name_table: [[0; NAME_TABLE_SIZE]; 2],
             palette_table: [0; PALETTE_TABLE_SIZE],
 
-            ppu_ctrl: PpuCtrl::from_bits_truncate(0),
-            ppu_mask: PpuMask::from_bits_truncate(0),
-            ppu_status: PpuStatus::from_bits_truncate(0),
+            ctrl: PpuCtrl::from_bits_truncate(0),
+            mask: PpuMask::from_bits_truncate(0),
+            status: PpuStatus::from_bits_truncate(0),
             oam_addr_reg: 0,
             oam_data_reg: 0,
             scroll_reg: 0,
@@ -48,7 +55,9 @@ impl PpuBus {
 
             ppu_addr_latch: false,
             ppu_data_buffer: 0,
-            ppu_addr_buffer: 0,
+            vram_addr: LoopyPpuReg::default(),
+            tram_addr: LoopyPpuReg::default(),
+            fine_x: 0
         }
     }
 
@@ -60,14 +69,12 @@ impl PpuBus {
         }
 
         match addr & 0x0007 {
-            0x0000 => self.ppu_ctrl.bits(),
-            0x0001 => self.ppu_mask.bits(),
+            0x0000 => 0,
+            0x0001 => 0,
             0x0002 => {
-                self.ppu_status.insert(PpuStatus::IN_VBLANK);
-                
-                let ret = (self.ppu_status.bits() & 0b11100000) | (self.ppu_data_buffer & 0b00011111);
+                let ret = (self.status.bits() & 0b11100000) | (self.ppu_data_buffer & 0b00011111);
 
-                self.ppu_status.remove(PpuStatus::IN_VBLANK);
+                self.status.remove(PpuStatus::IN_VBLANK);
                 self.ppu_addr_latch = false;
 
                 ret
@@ -79,12 +86,12 @@ impl PpuBus {
             0x0007 => {
                 let mut ret = self.ppu_data_buffer;
 
-                self.ppu_data_buffer = self.ppu_read(self.ppu_addr_buffer as usize, cartridge);
-                if self.ppu_addr_buffer as usize >= PALETTE_TABLE_START {
+                self.ppu_data_buffer = self.ppu_read(self.vram_addr.0 as usize, cartridge);
+                if self.vram_addr.0 as usize >= PALETTE_TABLE_START {
                     ret = self.ppu_data_buffer;
                 }
 
-                self.ppu_addr_buffer += 1;
+                self.vram_addr.0 += self.ctrl.vram_addr_inc();
 
                 ret
             },
@@ -99,24 +106,42 @@ impl PpuBus {
         }
 
         match addr & 0x0007 {
-            0x0000 => self.ppu_ctrl = PpuCtrl::from_bits_truncate(byte),
-            0x0001 => self.ppu_mask = PpuMask::from_bits_truncate(byte),
+            0x0000 => {
+                self.ctrl = PpuCtrl::from_bits_truncate(byte);
+
+                self.tram_addr.set_mask(LoopyPpuReg::NAME_TABLE_X, 
+                    self.ctrl.name_table_x() as u16);
+                self.tram_addr.set_mask(LoopyPpuReg::NAME_TABLE_Y,
+                    self.ctrl.name_table_y() as u16);
+            },
+            0x0001 => self.mask = PpuMask::from_bits_truncate(byte),
             0x0002 => {},
             0x0003 => self.oam_addr_reg = byte,
             0x0004 => self.oam_data_reg = byte,
-            0x0005 => self.scroll_reg = byte,
+            0x0005 => {
+                if !self.ppu_addr_latch {
+                    self.fine_x = byte & 0x07;
+                    self.tram_addr.set_mask(LoopyPpuReg::COARSE_X, (byte as u16) >> 3);
+                } else {
+                    self.tram_addr.set_mask(LoopyPpuReg::FINE_Y,(byte as u16) & 0x07);
+                    self.tram_addr.set_mask(LoopyPpuReg::COARSE_Y, (byte as u16) >> 3);
+                }
+
+                self.ppu_addr_latch = !self.ppu_addr_latch;
+            }
             0x0006 => {
                 if !self.ppu_addr_latch {
-                    self.ppu_addr_buffer = (self.ppu_addr_buffer & 0x00FF) | ((byte as u16) << 8);
-                    self.ppu_addr_latch = true;
+                    self.tram_addr.0 = (self.tram_addr.0 & 0x00FF) | ((byte as u16) << 8);
                 } else {
-                    self.ppu_addr_buffer = (self.ppu_addr_buffer & 0xFF00) | (byte as u16);
-                    self.ppu_addr_latch = false;
+                    self.tram_addr.0 = (self.tram_addr.0 & 0xFF00) | (byte as u16);
+                    self.vram_addr = self.tram_addr;
                 }
+
+                self.ppu_addr_latch = !self.ppu_addr_latch;
             }
             0x0007 => {
-                self.ppu_write(self.ppu_addr_buffer as usize, byte, cartridge);
-                self.ppu_addr_buffer += 1;
+                self.ppu_write(self.vram_addr.0 as usize, byte, cartridge);
+                self.vram_addr.0 += self.ctrl.vram_addr_inc();
             }
             _ => unreachable!()
         }
@@ -136,7 +161,7 @@ impl PpuBus {
                         // [        B        ]|[        b        ]
                         // [ 0x8000 - 0xBFFF ]|[ 0xC000 - 0xFFFF ]
 
-                        self.name_table[(addr >> 11) & 0x01][addr % NAME_TABLE_SIZE] 
+                        self.name_table[(addr >> 11) & 0x01][addr & 0x3FF] 
                     },
                     Mirroring::VERTICAL => {
                         // [        A        ]|[        B        ]
@@ -145,7 +170,7 @@ impl PpuBus {
                         // [        a        ]|[        b        ]
                         // [ 0x8000 - 0xBFFF ]|[ 0xC000 - 0xFFFF ]
 
-                        self.name_table[(addr >> 10) & 0x01][addr % NAME_TABLE_SIZE] 
+                        self.name_table[(addr >> 10) & 0x01][addr & 0x3FF] 
                     },
                     _ => unimplemented!()
                 }
@@ -177,7 +202,7 @@ impl PpuBus {
                         // [        B        ]|[        b        ]
                         // [ 0x8000 - 0xBFFF ]|[ 0xC000 - 0xFFFF ]
 
-                        self.name_table[(addr >> 11) & 0x01][addr % NAME_TABLE_SIZE] = byte;
+                        self.name_table[(addr >> 11) & 0x01][addr & 0x3FF] = byte;
                     },
                     Mirroring::VERTICAL => {
                         // [        A        ]|[        B        ]
@@ -186,14 +211,13 @@ impl PpuBus {
                         // [        a        ]|[        b        ]
                         // [ 0x8000 - 0xBFFF ]|[ 0xC000 - 0xFFFF ]
                         
-                        self.name_table[(addr >> 10) & 0x01][addr % NAME_TABLE_SIZE] = byte;
+                        self.name_table[(addr >> 10) & 0x01][addr & 0x3FF] = byte;
                     },
                     _ => unimplemented!()
                 }
             },
             PALETTE_TABLE_START..=PALETTE_TABLE_END => {
-                addr -= PALETTE_TABLE_START;
-                addr %= PALETTE_TABLE_SIZE;
+                addr &= 0x1F;
 
                 if addr == 0x10 || addr == 0x14 || addr == 0x18 || addr == 0x1C {
                     addr -= 0x10;

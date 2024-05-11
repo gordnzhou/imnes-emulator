@@ -97,10 +97,14 @@ impl Cpu6502 {
                     panic!("Illegal Opcode: {:02x}", opcode);
                 }
 
-                log_to_file(&format!("{:04X} OPCODE:{:?} IMM:{:02X}     A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}  CYC:{}", 
-                    self.program_counter - 1, op.instr, self.read_byte(bus, self.program_counter), 
-                    self.accumulator, self.x_index_reg, self.y_index_reg, self.processor_status, self.stack_pointer,
-                    self.total_cycles)).unwrap();
+                // log_to_file(&format!("{:04X} OPCODE:{:?} IMM:{:02X}     A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}  CYC:{}", 
+                //     self.program_counter - 1, op.instr, self.read_byte(bus, self.program_counter), 
+                //     self.accumulator, self.x_index_reg, self.y_index_reg, self.processor_status, self.stack_pointer,
+                //     self.total_cycles)).unwrap();
+
+                // log_to_file(&format!("A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} CYC:{}", 
+                //     self.accumulator, self.x_index_reg, self.y_index_reg, self.processor_status, self.stack_pointer,
+                //     self.total_cycles)).unwrap();
 
                 op.execute_op(self, bus)
             },
@@ -833,7 +837,7 @@ impl Cpu6502 {
         self.addr_mode = AddrMode::ZPG;
         let operand_addr = self.advance_pc(bus) as u16;
 
-        self.set_operand_addr(bus, operand_addr);
+        self.set_operand_addr(operand_addr);
     }
 
     #[inline]
@@ -841,7 +845,7 @@ impl Cpu6502 {
         self.addr_mode = AddrMode::ZPX;
         let operand_addr = self.advance_pc(bus).wrapping_add(self.x_index_reg) as u16;
 
-        self.set_operand_addr(bus, operand_addr);
+        self.set_operand_addr(operand_addr);
     }
 
     #[inline]
@@ -849,7 +853,7 @@ impl Cpu6502 {
         self.addr_mode = AddrMode::ZPY;
         let operand_addr = self.advance_pc(bus).wrapping_add(self.y_index_reg) as u16;
 
-        self.set_operand_addr(bus, operand_addr);
+        self.set_operand_addr(operand_addr);
     }
 
     #[inline]
@@ -857,7 +861,7 @@ impl Cpu6502 {
         self.addr_mode = AddrMode::REL;
         let offset =  (self.advance_pc(bus) as i8) as i32;
 
-        self.set_operand_addr(bus, (self.program_counter as i32 + offset) as u16);
+        self.set_operand_addr((self.program_counter as i32 + offset) as u16);
         self.page_crossed = (self.program_counter ^ self.operand_addr) & 0xFF00 != 0;
     }
 
@@ -866,7 +870,7 @@ impl Cpu6502 {
         self.addr_mode = AddrMode::ABS;
         let abs_address = self.fetch_abs_address(bus);
 
-        self.set_operand_addr(bus, abs_address);
+        self.set_operand_addr(abs_address);
     }
 
     #[inline]
@@ -874,7 +878,7 @@ impl Cpu6502 {
         self.addr_mode = AddrMode::ABX;
         let addr = self.fetch_abs_address(bus);
         
-        self.set_operand_addr(bus, addr.wrapping_add(self.x_index_reg as u16));
+        self.set_operand_addr(addr.wrapping_add(self.x_index_reg as u16));
         self.page_crossed = ((self.operand_addr ^ addr) & 0xFF00) != 0;
     }
 
@@ -883,7 +887,7 @@ impl Cpu6502 {
         self.addr_mode = AddrMode::ABY;
         let addr = self.fetch_abs_address(bus);
 
-        self.set_operand_addr(bus, addr.wrapping_add(self.y_index_reg as u16));
+        self.set_operand_addr(addr.wrapping_add(self.y_index_reg as u16));
         self.page_crossed = ((self.operand_addr ^ addr) & 0xFF00) != 0;
     }
 
@@ -900,7 +904,7 @@ impl Cpu6502 {
             self.read_byte(bus, ptr.wrapping_add(1))
         } as u16;
 
-        self.set_operand_addr(bus, (hi << 8) | lo);
+        self.set_operand_addr((hi << 8) | lo);
     }
 
     #[inline]
@@ -911,7 +915,7 @@ impl Cpu6502 {
         let lo = self.read_byte(bus, ptr as u16) as u16;
         let hi = self.read_byte(bus, ptr.wrapping_add(1) as u16) as u16;
         
-        self.set_operand_addr(bus, (hi << 8) | lo);
+        self.set_operand_addr((hi << 8) | lo);
     }
 
     #[inline]
@@ -924,7 +928,7 @@ impl Cpu6502 {
 
         let addr = (hi << 8) | lo;
 
-        self.set_operand_addr(bus, addr.wrapping_add(self.y_index_reg as u16));
+        self.set_operand_addr(addr.wrapping_add(self.y_index_reg as u16));
         self.page_crossed = ((self.operand_addr ^ addr) & 0xFF00) != 0;
     }
 
@@ -952,9 +956,9 @@ impl Cpu6502 {
     }
 
     #[inline]
-    fn set_operand_addr(&mut self, bus: &mut Bus, operand_addr: u16) {
+    fn set_operand_addr(&mut self, operand_addr: u16) {
         self.operand_addr = operand_addr;
-        self.set_operand_data(self.read_byte(bus, self.operand_addr));
+        self.page_crossed = false;
     }
 
     #[inline]
@@ -1032,13 +1036,14 @@ impl Cpu6502 {
     }
 }
 
+#[allow(dead_code)]
 fn log_to_file(message: &str) -> std::io::Result<()> {
     let mut file = OpenOptions::new()
         .write(true)
         .append(true)
         .open("logs/log.txt")?;
 
-    // println!("write: {}", message);
+    println!("write: {}", message);
     writeln!(file, "{}", message)
 }
 
