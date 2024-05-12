@@ -26,8 +26,9 @@ use sdl2::EventPump;
 use std::io::Write;
 use std::fs::OpenOptions;
 
-const ROM_PATH: &str = "roms/nestest.nes";
-const SCREEN_SCALE: u32 = 3;
+const ROM_PATH: &str = "roms/smb.nes";
+
+const SCREEN_SCALE: u32 = 2;
 const DISPLAY_WIDTH: u32 = 256;
 const DISPLAY_HEIGHT: u32 = 240;
 
@@ -54,8 +55,6 @@ fn clear_log_file() -> std::io::Result<()> {
 
 fn main() -> Result<(), String> {
     clear_log_file().unwrap();
-    let mut total_cycles: u32 = 0;
-    let mut joypad_state = 0;
 
     let sdl_context = sdl2::init()?;
 
@@ -88,21 +87,25 @@ fn main() -> Result<(), String> {
 
     let cartridge = match CartridgeNes::from_ines_file(ROM_PATH) {
         Ok(cartridge) => cartridge,
-        Err(e) => panic!("{}", e)
+        Err(e) => panic!("Unable to load cartridge: {}", e)
     };
 
-
+    let mut total_cycles: u32 = 0;
+    let mut joypad_state = 0;
     let mut cpu = Cpu6502::new();
     let mut ppu = Ppu2C03::new();
     let mut bus = Bus::new(cartridge);
 
-    cpu.reset(&mut bus);
-    
+    cpu.reset(&mut bus); 
     loop {
         ppu.clock(&mut bus);
     
         if total_cycles % 3 == 0 {
-            cpu.clock(&mut bus);
+            if bus.dma_transferring {
+                bus.dma_clock(total_cycles);
+            } else {
+                cpu.clock(&mut bus);
+            }
         }
 
         if ppu.nmi_requested() {
@@ -112,7 +115,7 @@ fn main() -> Result<(), String> {
         if ppu.frame_complete() {
             match get_events(&mut event_pump, &mut joypad_state) {
                 Ok(_) => bus.update_joypad_state(joypad_state),
-                Err(e) => panic!("{}", e)
+                Err(e) => panic!("Emulator exited: {}", e)
             }
 
             let frame = ppu.frame_buffer

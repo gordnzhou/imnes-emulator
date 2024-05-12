@@ -10,11 +10,6 @@ use self::opcode::{AddrMode, OPCODES_LOOKUP};
 const STACK_START: u16 = 0x100;
 const ILLEGAL_OPCODES_ENABLED: bool = true;
 
-// TODO: temporary for nestest
-// const STARTING_PC: u16 = 0xC000;
-
-// enum StatusFlag { C, Z, I, D, B, U, V, N }
-
 bitflags! {
     struct StatusFlag: u8 {
         const C = 0b00000001;
@@ -27,21 +22,6 @@ bitflags! {
         const N = 0b10000000;
     }
 }
-
-// impl StatusFlag {
-//     pub fn mask(&self) -> u8 {
-//         match self {
-//             StatusFlag::C => 0b00000001,
-//             StatusFlag::Z => 0b00000010,
-//             StatusFlag::I => 0b00000100,
-//             StatusFlag::D => 0b00001000,
-//             StatusFlag::B => 0b00010000,
-//             StatusFlag::U => 0b00100000,
-//             StatusFlag::V => 0b01000000,
-//             StatusFlag::N => 0b10000000,
-//         }
-//     }
-// }
 
 pub struct Cpu6502 {
     accumulator: u8,
@@ -62,7 +42,7 @@ pub struct Cpu6502 {
 
 impl Cpu6502 {
     pub fn new() -> Self {
-        Cpu6502 {
+        Self {
             accumulator: 0,
             x_index_reg: 0,
             y_index_reg: 0,
@@ -116,23 +96,27 @@ impl Cpu6502 {
     }
 
     #[allow(dead_code)]
-    pub fn irq(&mut self, bus: &mut Bus) {
+    pub fn irq(&mut self, bus: &mut Bus) -> u32 {
         if self.get_flag(StatusFlag::I) {
-            return;
+            return 0;
         }
 
         self.trigger_interrupt(bus, 0xFFFE, false);
 
-        self.cycles += 8;
+        self.cycles += 7;
+        self.total_cycles += 7;
+        7
     }
     
-    pub fn nmi(&mut self, bus: &mut Bus) {
+    pub fn nmi(&mut self, bus: &mut Bus) -> u32 {
         self.trigger_interrupt(bus, 0xFFFA, false);
 
         self.cycles += 8;
+        self.total_cycles += 8;
+        8
     }
 
-    pub fn reset(&mut self, bus: &mut Bus) {
+    pub fn reset(&mut self, bus: &mut Bus) -> u32 {
         self.accumulator = 0;
         self.x_index_reg = 0;
         self.y_index_reg = 0;
@@ -144,9 +128,9 @@ impl Cpu6502 {
         let hi = self.read_byte(bus, reset_vector + 1) as u16;
         self.program_counter = (hi << 8) | lo;
 
-        // self.program_counter = STARTING_PC;
-
         self.cycles += 8;
+        self.total_cycles += 8;
+        8
     }
     
     fn trigger_interrupt(&mut self, bus: &mut Bus, vector_addr: u16, brk_caused: bool) {

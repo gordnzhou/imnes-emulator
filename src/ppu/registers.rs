@@ -1,14 +1,17 @@
+const PATTERN_TABLE_1_ADDR: usize = 0x0000;
+const PATTERN_TABLE_2_ADDR: usize = 0x1000;
+
 bitflags! {
     #[derive(Debug, Clone, Copy)]
     pub struct PpuCtrl: u8 {
-        const NAME_TABLE_X    = 0b00000001;
-        const NAME_TABLE_Y    = 0b00000010;
-        const VRAM_ADDR_INC   = 0b00000100;
-        const SPR_TABLE_ADDR  = 0b00001000;
-        const BG_TABLE_ADDR   = 0b00010000;
-        const SPR_SIZE        = 0b00100000;
-        const MASTER_SELECT   = 0b01000000;
-        const NMI_ENABLED     = 0b10000000;
+        const NAME_TABLE_X     = 0b00000001;
+        const NAME_TABLE_Y     = 0b00000010;
+        const VRAM_ADDR_INC    = 0b00000100;
+        const SPR_PATTERN_ADDR = 0b00001000;
+        const BG_PATTERN_ADDR  = 0b00010000;
+        const SPR_SIZE         = 0b00100000;
+        const MASTER_SELECT    = 0b01000000;
+        const NMI_ENABLED      = 0b10000000;
     }
 
     #[derive(Debug, Clone, Copy)]
@@ -31,7 +34,6 @@ bitflags! {
     }
 }
 
-#[allow(dead_code)]
 impl PpuCtrl { 
     #[inline]
     pub fn name_table_x(&self) -> bool {
@@ -53,21 +55,34 @@ impl PpuCtrl {
     }
 
     #[inline]
-    pub fn spr_table_addr(&self) -> bool {
-        self.contains(PpuCtrl::SPR_TABLE_ADDR)
+    pub fn spr_pattern_addr(&self) -> usize {
+        if self.contains(PpuCtrl::SPR_PATTERN_ADDR) {
+            PATTERN_TABLE_2_ADDR
+        } else {
+            PATTERN_TABLE_1_ADDR
+        }
     }
 
     #[inline]
-    pub fn bg_table_addr(&self) -> usize {
-        (self.contains(PpuCtrl::BG_TABLE_ADDR) as usize) << 12
+    pub fn bg_pattern_addr(&self) -> usize {
+        if self.contains(PpuCtrl::BG_PATTERN_ADDR) {
+            PATTERN_TABLE_2_ADDR
+        } else {
+            PATTERN_TABLE_1_ADDR
+        }
     }
 
     #[inline]
-    pub fn spr_size(&self) -> bool {
-        self.contains(PpuCtrl::SPR_SIZE)
+    pub fn spr_height(&self) -> usize {
+        if self.contains(PpuCtrl::SPR_SIZE) {
+            16
+        } else {
+            8
+        }
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn master_select(&self) -> bool {
         self.contains(PpuCtrl::MASTER_SELECT)
     }
@@ -78,7 +93,6 @@ impl PpuCtrl {
     }
 }
 
-#[allow(dead_code)]
 impl PpuMask { 
     #[inline]
     pub fn greyscale_on(&self) -> bool {
@@ -106,36 +120,21 @@ impl PpuMask {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn emp_red(&self) -> bool {
         self.contains(PpuMask::EMP_RED)
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn emp_green(&self) -> bool {
         self.contains(PpuMask::EMP_GREEN)
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn emp_blue(&self) -> bool {
         self.contains(PpuMask::EMP_BLUE)
-    }
-}
-
-#[allow(dead_code)]
-impl PpuStatus { 
-    #[inline]
-    pub fn spr_overflow(&self) -> bool {
-        self.contains(PpuStatus::SPR_OVERFLOW)
-    }
-
-    #[inline]
-    pub fn spr_0_hit(&self) -> bool {
-        self.contains(PpuStatus::SPR_0_HIT)
-    }
-
-    #[inline]
-    pub fn in_vblank(&self) -> bool {
-        self.contains(PpuStatus::IN_VBLANK)
     }
 }
 
