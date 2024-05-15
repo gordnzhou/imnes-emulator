@@ -7,8 +7,6 @@ const PPU_REG_START: usize = 0x2000;
 const PPU_REG_END: usize = 0x3FFF;
 const IO_REG_START: usize = 0x4000;
 const IO_REG_END: usize = 0x401F;
-const CARTRIDGE_START: usize = 0x4020;
-const CARTRIDGE_END: usize = 0xFFFF;
 
 pub const DMA_REG_ADDR: usize = 0x4014;
 const JOYPAD1_REG: usize = 0x4016;
@@ -18,8 +16,8 @@ const CPU_RAM_LENGTH: usize = 0x800;
 
 pub struct Bus {
     cartridge: CartridgeNes,
-    cpu_ram: [u8; CPU_RAM_LENGTH], 
-
+    cpu_ram: [u8; CPU_RAM_LENGTH],
+    
     pub ppu_bus: PpuBus,
 
     joypad_registers: [u8; 2],
@@ -31,7 +29,7 @@ pub struct Bus {
     pub dma_transferring: bool,
     false_dma: bool,
 
-    // TODO: TEMPORARY
+    // TODO: Add APU Registers
     io_registers: [u8; IO_REG_END - IO_REG_START + 1],
 }
 
@@ -57,6 +55,11 @@ impl Bus {
     }
 
     pub fn cpu_read(&mut self, addr: usize) -> u8 {
+        match self.cartridge.cpu_read(addr) {
+            Some(byte) => return byte,
+            None => {}
+        }
+
         match addr {
             CPU_RAM_START..=CPU_RAM_END => self.cpu_ram[addr % CPU_RAM_LENGTH],
             PPU_REG_START..=PPU_REG_END => {
@@ -69,12 +72,15 @@ impl Bus {
                 ret as u8
             }
             IO_REG_START..=IO_REG_END => self.io_registers[addr - IO_REG_START],
-            CARTRIDGE_START..=CARTRIDGE_END => self.cartridge.cpu_read(addr),
-            _ => unimplemented!()
+            _ => 0
         }
     }
 
     pub fn cpu_write(&mut self, addr: usize, byte: u8) {
+        if self.cartridge.cpu_write(addr, byte) {
+            return;
+        }
+
         match addr {
             CPU_RAM_START..=CPU_RAM_END => self.cpu_ram[addr % CPU_RAM_LENGTH] = byte,
             PPU_REG_START..=PPU_REG_END => {
@@ -89,8 +95,7 @@ impl Bus {
                 self.joypad_registers[addr & 0x01] = self.joypad_state[addr & 0x01];
             },
             IO_REG_START..=IO_REG_END => self.io_registers[addr - IO_REG_START] = byte,
-            CARTRIDGE_START..=CARTRIDGE_END => self.cartridge.cpu_write(addr, byte),
-            _ => unimplemented!()
+            _ => {}
         }
     }
 
@@ -106,7 +111,7 @@ impl Bus {
                 let data_addr = (self.dma_page as usize) << 8 | (self.dma_addr as usize);
                 self.dma_data = self.cpu_read(data_addr);
             } else {
-                self.ppu_bus.oam[self.dma_addr as usize] = self.dma_data;
+                self.ppu_bus.write_oam(self.dma_addr as usize, self.dma_data);
                 self.dma_addr = self.dma_addr.wrapping_add(1);
 
                 if self.dma_addr == 0x00 {
@@ -122,6 +127,7 @@ impl Bus {
     }
 
     #[allow(dead_code)]
+    // TODO: ppu write when?
     pub fn ppu_write(&mut self, addr: usize, byte: u8) {
         self.ppu_bus.ppu_write(addr, byte, &mut self.cartridge);
     }
@@ -135,6 +141,8 @@ impl Bus {
 #[cfg(test)]
 impl Bus {
     pub fn load_ram(&mut self, data: &[u8]) {
-        self.cpu_ram[..data.len()].copy_from_slice(&data[..data.len()]);
+        for i in 0..data.len() {
+            self.cartridge.cpu_write(i, data[i]);
+        }
     }
 }

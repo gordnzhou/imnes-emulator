@@ -19,7 +19,7 @@ pub const OAM_SIZE: usize = 0x100;
 pub struct PpuBus {
     name_table: [[u8; NAME_TABLE_SIZE]; 2],
     palette_table: [u8; PALETTE_TABLE_SIZE],
-    pub oam: [u8; OAM_SIZE],
+    oam: [u8; OAM_SIZE],
 
     pub ctrl: PpuCtrl,
     pub mask: PpuMask,
@@ -53,8 +53,16 @@ impl PpuBus {
             ppu_data_buffer: 0,
             vram_addr: LoopyPpuReg::default(),
             tram_addr: LoopyPpuReg::default(),
-            fine_x: 0
+            fine_x: 0,
         }
+    }
+
+    pub fn read_oam(&self, addr: usize) -> u8 {
+        self.oam[addr]
+    }
+
+    pub fn write_oam(&mut self, addr: usize, byte: u8) {
+        self.oam[addr] = byte;
     }
 
     // CPU can only access the PPU memory map through the PPU registers
@@ -93,7 +101,7 @@ impl PpuBus {
 
     pub fn cpu_write_reg(&mut self, addr: usize, byte: u8, cartridge: &mut CartridgeNes) {
         match addr & 0x0007 {
-            0x0000 => {
+            0x0000 => { 
                 self.ctrl = PpuCtrl::from_bits_truncate(byte);
 
                 self.tram_addr.set_mask(LoopyPpuReg::NAME_TABLE_X, 
@@ -124,9 +132,9 @@ impl PpuBus {
             }
             0x0006 => {
                 if !self.ppu_addr_latch {
-                    self.tram_addr.0 = (((byte & 0x3F) as u16) << 8) | (self.tram_addr.0 & 0x00FF);
+                    self.tram_addr.0 = (((byte & 0x003F) as u16) << 8) | (self.tram_addr.0 & 0x00FF);
                 } else {
-                    self.tram_addr.0 = (self.tram_addr.0 & 0xFF00) | (byte as u16);
+                    self.tram_addr.0 = (self.tram_addr.0 & 0x7F00) | (byte as u16);
                     self.vram_addr.0 = self.tram_addr.0;
                 }
 
@@ -165,6 +173,12 @@ impl PpuBus {
 
                         self.name_table[(addr >> 10) & 0x01][addr & 0x3FF] 
                     },
+                    Mirroring::ONESCREEN_LO => {
+                        self.name_table[0][addr & 0x3FF] 
+                    }
+                    Mirroring::ONESCREEN_HI => {
+                        self.name_table[1][addr & 0x3FF] 
+                    }
                     _ => unimplemented!()
                 }
             },
@@ -206,6 +220,12 @@ impl PpuBus {
                         
                         self.name_table[(addr >> 10) & 0x01][addr & 0x3FF] = byte;
                     },
+                    Mirroring::ONESCREEN_LO => {
+                        self.name_table[0][addr & 0x3FF] = byte;
+                    }
+                    Mirroring::ONESCREEN_HI => {
+                        self.name_table[1][addr & 0x3FF] = byte;
+                    }
                     _ => unimplemented!()
                 }
             },
@@ -218,7 +238,7 @@ impl PpuBus {
                 
                 self.palette_table[addr] = byte;
             }
-            _ => unreachable!()
+            _ => {}
         }
     }
 }

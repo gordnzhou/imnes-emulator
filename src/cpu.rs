@@ -8,6 +8,8 @@ use crate::bus::Bus;
 use self::opcode::{AddrMode, OPCODES_LOOKUP};
 
 const STACK_START: u16 = 0x100;
+const STACK_END: u16 = 0x1FF;
+
 const ILLEGAL_OPCODES_ENABLED: bool = true;
 
 bitflags! {
@@ -48,7 +50,7 @@ impl Cpu6502 {
             y_index_reg: 0,
             program_counter: 0,
             stack_pointer: 0xFD,
-            processor_status: 0x24,
+            processor_status: 0,
 
             addr_mode: AddrMode::IMP,
             operand_addr: 0,
@@ -56,22 +58,23 @@ impl Cpu6502 {
             page_crossed: false,
 
             cycles: 0,
-            total_cycles: 7,
+            total_cycles: 0,
         }
     }
 
     pub fn clock(&mut self, bus: &mut Bus) {
         if self.cycles == 0 {
             self.execute_instruction(bus);
-        } else {
-            self.cycles -= 1;
         }
+
+        self.cycles -= 1;
+        self.total_cycles += 1;
     }
 
     fn execute_instruction(&mut self, bus: &mut Bus) {
         let opcode = self.advance_pc(bus);
 
-        let cycles = match OPCODES_LOOKUP.get(&opcode) {
+        self.cycles += match OPCODES_LOOKUP.get(&opcode) {
             Some(op) => {
                 if op.illegal && !ILLEGAL_OPCODES_ENABLED {
                     panic!("Illegal Opcode: {:02x}", opcode);
@@ -90,33 +93,44 @@ impl Cpu6502 {
             },
             None => panic!("Unrecognized/Unsupported Opcode: {:02x}", opcode)
         };
-
-        self.cycles += cycles;
-        self.total_cycles += cycles;
     }
 
     #[allow(dead_code)]
-    pub fn irq(&mut self, bus: &mut Bus) -> u32 {
+    pub fn irq(&mut self, bus: &mut Bus) {
         if self.get_flag(StatusFlag::I) {
-            return 0;
+            return;
         }
 
         self.trigger_interrupt(bus, 0xFFFE, false);
 
         self.cycles += 7;
-        self.total_cycles += 7;
-        7
     }
     
-    pub fn nmi(&mut self, bus: &mut Bus) -> u32 {
+    pub fn nmi(&mut self, bus: &mut Bus) {
         self.trigger_interrupt(bus, 0xFFFA, false);
 
-        self.cycles += 8;
-        self.total_cycles += 8;
-        8
+        self.cycles += 7;
+    }
+    
+    fn trigger_interrupt(&mut self, bus: &mut Bus, vector_addr: u16, brk_caused: bool) {
+        if brk_caused {
+            self.processor_status |= StatusFlag::B.bits();
+        } else {
+            self.processor_status |= StatusFlag::U.bits();
+        }
+
+        self.push_word_to_stack(bus, self.program_counter);
+        self.push_byte_to_stack(bus, self.processor_status);
+
+        self.processor_status |= StatusFlag::I.bits();
+        self.processor_status &= !StatusFlag::B.bits();
+
+        let lo = self.read_byte(bus, vector_addr) as u16;
+        let hi = self.read_byte(bus, vector_addr + 1) as u16;
+        self.program_counter = (hi << 8) | lo;
     }
 
-    pub fn reset(&mut self, bus: &mut Bus) -> u32 {
+    pub fn reset(&mut self, bus: &mut Bus) {
         self.accumulator = 0;
         self.x_index_reg = 0;
         self.y_index_reg = 0;
@@ -128,27 +142,7 @@ impl Cpu6502 {
         let hi = self.read_byte(bus, reset_vector + 1) as u16;
         self.program_counter = (hi << 8) | lo;
 
-        self.cycles += 8;
-        self.total_cycles += 8;
-        8
-    }
-    
-    fn trigger_interrupt(&mut self, bus: &mut Bus, vector_addr: u16, brk_caused: bool) {
-        if brk_caused {
-            self.processor_status |= StatusFlag::B.bits();
-        } else {
-            self.processor_status &= !StatusFlag::B.bits();
-            self.processor_status |= StatusFlag::I.bits();
-        }
-
-        self.processor_status |= StatusFlag::U.bits();
-
-        self.push_word_to_stack(bus, self.program_counter);
-        self.push_byte_to_stack(bus, self.processor_status);
-
-        let lo = self.read_byte(bus, vector_addr) as u16;
-        let hi = self.read_byte(bus, vector_addr + 1) as u16;
-        self.program_counter = (hi << 8) | lo;
+        self.cycles += 7;
     }
 
     #[inline]
@@ -238,7 +232,7 @@ impl Cpu6502 {
     #[inline]
     fn branch_if_cond(&mut self, _bus: &mut Bus, cond: bool) -> u32 {
         if cond {
-            self.program_counter = self.get_branch_pc();
+            self.program_counter = self.operand_addr;
 
             1 + self.page_crossed as u32
         } else {
@@ -342,9 +336,9 @@ impl Cpu6502 {
 
     #[inline]
     pub(super) fn force_interrupt(&mut self, bus: &mut Bus) -> u32 {
+        let _ = self.advance_pc(bus);
+        
         self.trigger_interrupt(bus, 0xFFFE, true);
-
-        // let _ = self.advance_pc(bus);
 
         0
     }
@@ -387,7 +381,14 @@ impl Cpu6502 {
     #[inline]
     pub(super) fn jump_to_subroutine(&mut self, bus: &mut Bus) -> u32 {
         self.push_word_to_stack(bus, self.program_counter.wrapping_sub(1));
-        self.program_counter = self.operand_addr;
+
+        // edge case: upper byte of the new pc is read AFTER stack push; 
+        // new pc can be altered by the stack push if current pc is addressing from the stack
+        self.program_counter = if matches!(self.program_counter.wrapping_sub(1), STACK_START..=STACK_END) {
+            ((self.read_byte(bus, self.program_counter - 1) as u16) << 8) | (self.operand_addr & 0x00FF)
+        } else {
+            self.operand_addr 
+        };
 
         0
     }
@@ -791,7 +792,11 @@ impl Cpu6502 {
     
     #[inline]
     pub(super) fn jam(&mut self, _bus: &mut Bus) -> u32 {
-        panic!("JAM instruction called");
+        // panic!("JAM instruction called!");
+        println!("JAM instruction called!");
+        self.program_counter -= 1;
+
+        0
     }
 
     #[inline]
@@ -846,7 +851,7 @@ impl Cpu6502 {
         let offset =  (self.advance_pc(bus) as i8) as i32;
 
         self.set_operand_addr((self.program_counter as i32 + offset) as u16);
-        self.page_crossed = (self.program_counter ^ self.operand_addr) & 0xFF00 != 0;
+        self.page_crossed = (self.program_counter & 0xFF00) != (self.operand_addr & 0xFF00)
     }
 
     #[inline]
@@ -934,12 +939,6 @@ impl Cpu6502 {
     }
 
     #[inline]
-    fn get_branch_pc(&self) -> u16 {
-        assert!(matches!(self.addr_mode, AddrMode::REL));
-        self.operand_addr
-    }
-
-    #[inline]
     fn set_operand_addr(&mut self, operand_addr: u16) {
         self.operand_addr = operand_addr;
         self.page_crossed = false;
@@ -955,6 +954,7 @@ impl Cpu6502 {
     fn fetch_abs_address(&mut self, bus: &mut Bus) -> u16 {
         let lo = self.advance_pc(bus) as u16;
         let hi = self.advance_pc(bus) as u16;
+
         (hi << 8) | lo
     }
 
@@ -1007,7 +1007,7 @@ impl Cpu6502 {
     #[inline]
     fn advance_pc(&mut self, bus: &mut Bus) -> u8 {
         let ret = self.read_byte(bus, self.program_counter);
-        self.program_counter += 1;
+        self.program_counter = self.program_counter.wrapping_add(1);
         ret
     }
 
@@ -1035,30 +1035,123 @@ fn log_to_file(message: &str) -> std::io::Result<()> {
 mod tests {
     use crate::{bus::Bus, cartridge::CartridgeNes, cpu::StatusFlag};
     use super::{opcode::OPCODES_LOOKUP, Cpu6502};
+    use serde_json::Value;
+    use std::fs::File;
+    use std::io::BufReader;
+    use std::error::Error;
+
+    fn read_json_file(file_path: &str) -> Result<Vec<Value>, Box<dyn Error>> {
+        let file = File::open(file_path)?;
+        let reader = BufReader::new(file);
+        let json: Vec<Value> = serde_json::from_reader(reader)?;
+    
+        Ok(json)
+    }
+
+    #[test]
+    #[ignore]
+    pub fn test_legal_opcodes() {
+        let test_json_path = "logs/nes6502/v1";
+
+        for i in 0x00..=0xFF {
+
+            let test_json = read_json_file(&format!("{}/{:02x}.json", test_json_path, i)).unwrap();
+
+            for data in &test_json {
+                let name = data.get("name").unwrap();
+
+                println!("TESTING: {}", name);
+                
+                let initial_state = data.get("initial").unwrap();
+
+                let cartridge = CartridgeNes::test_new();
+        
+                let mut cpu = Cpu6502::new();
+                cpu.program_counter = initial_state.get("pc").unwrap().as_u64().unwrap() as u16;
+                cpu.stack_pointer = initial_state.get("s").unwrap().as_u64().unwrap() as u8;
+                cpu.accumulator = initial_state.get("a").unwrap().as_u64().unwrap() as u8;
+                cpu.x_index_reg = initial_state.get("x").unwrap().as_u64().unwrap() as u8;
+                cpu.y_index_reg = initial_state.get("y").unwrap().as_u64().unwrap() as u8;
+                cpu.processor_status = initial_state.get("p").unwrap().as_u64().unwrap() as u8;
+
+                let mut bus = Bus::new(cartridge);
+
+                let ram_contents = initial_state.get("ram").unwrap().as_array().unwrap();
+                for item in ram_contents {
+                    let item = item.as_array().unwrap();
+
+                    let addr = item[0].as_u64().unwrap() as u16;
+                    let byte = item[1].as_u64().unwrap() as u8;
+
+                    cpu.write_byte(&mut bus, addr, byte);
+                }
+
+                let opcode = cpu.advance_pc(&mut bus);
+                match OPCODES_LOOKUP.get(&opcode) {
+                    Some(op) => {
+                        println!("{:04X} OPCODE:{:?} IMM:{:02X},{:02X}     A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}  CYC:{}", 
+                            cpu.program_counter.wrapping_sub(1), op.instr, cpu.read_byte(&mut bus, cpu.program_counter), cpu.read_byte(&mut bus, cpu.program_counter.wrapping_add(1)),
+                            cpu.accumulator, cpu.x_index_reg, cpu.y_index_reg, cpu.processor_status, cpu.stack_pointer,
+                            cpu.total_cycles);
+
+                        if op.illegal {
+                            println!("skipping illegal opcode: {:?}", op.instr);
+                            break;
+                        }
+
+                        op.execute_op(&mut cpu, &mut bus);
+                    },
+                    None => panic!("Unsupported Opcode: {}", opcode)
+                };
+
+                let final_state = data.get("final").unwrap();
+
+                assert_eq!(cpu.program_counter, final_state.get("pc").unwrap().as_u64().unwrap() as u16);
+                assert_eq!(cpu.stack_pointer,  final_state.get("s").unwrap().as_u64().unwrap() as u8);
+                assert_eq!(cpu.accumulator,  final_state.get("a").unwrap().as_u64().unwrap() as u8);
+                assert_eq!(cpu.x_index_reg, final_state.get("x").unwrap().as_u64().unwrap() as u8);
+                assert_eq!(cpu.y_index_reg, final_state.get("y").unwrap().as_u64().unwrap() as u8);
+                assert_eq!(cpu.processor_status, final_state.get("p").unwrap().as_u64().unwrap() as u8,
+                    "got {:08b} but expected {:08b}", cpu.processor_status, final_state.get("p").unwrap().as_u64().unwrap() as u8);
+
+                let ram_contents = final_state.get("ram").unwrap().as_array().unwrap();
+                for item in ram_contents {
+                    let item = item.as_array().unwrap();
+
+                    let addr = item[0].as_u64().unwrap() as u16;
+                    let byte = item[1].as_u64().unwrap() as u8;
+
+                    assert_eq!(byte, cpu.read_byte(&mut bus, addr), "WRONG BYTE AT {:04X}", addr);
+                }
+
+                println!("passed: {}", name);
+            }
+        }
+    }
 
     #[test]
     pub fn test_lda() {
-        let cartridge = CartridgeNes::new();
-        
         let mut cpu = Cpu6502::new();
 
-        let mut bus = Bus::new(cartridge);
+        let mut bus = Bus::new(CartridgeNes::test_new());
         bus.load_ram(&vec![0xA9, 0x11, 0xA5, 0xFE, 0xB5, 0xFC, 0xAD, 0x34, 0x12, 0xBD, 0x34, 0x12, 0xB9, 0x34, 0x12]);
 
         cpu.program_counter = 0x00;
         cpu.x_index_reg = 2;
         cpu.y_index_reg = 3;
-        cpu.write_byte(&mut bus, 0xFE, 0x22);
+        cpu.write_byte(&mut bus, 0x00FE, 0x22);
         cpu.write_byte(&mut bus, 0x1234, 0x33);
         cpu.write_byte(&mut bus, 0x1236, 0x44);
         cpu.write_byte(&mut bus, 0x1237, 0x55);
 
         let mut opcode = cpu.advance_pc(&mut bus);
         match OPCODES_LOOKUP.get(&opcode) {
-            Some(op) => op.execute_op(&mut cpu, &mut bus),
+            Some(op) => {
+                op.execute_op(&mut cpu, &mut bus)
+            },
             None => panic!("Unsupported Opcode: {}", opcode)
         };
-        assert!(cpu.program_counter == 0x02);
+        assert_eq!(cpu.program_counter, 0x02);
         assert_eq!(cpu.accumulator, 0x11, "FAILED: imm");
 
         opcode = cpu.advance_pc(&mut bus);
@@ -1100,7 +1193,7 @@ mod tests {
 
     #[test]
     pub fn test_stack() {
-        let mut bus = Bus::new(CartridgeNes::new());
+        let mut bus = Bus::new(CartridgeNes::test_new());
         let mut cpu = Cpu6502::new();
 
         cpu.push_byte_to_stack(&mut bus, 0x88);
@@ -1148,7 +1241,7 @@ mod tests {
     pub fn do_adc(operand1: u8, operand2: u8, result: u8, overflow: bool, carry: bool) {
         let mut cpu = Cpu6502::new();
 
-        let mut bus = Bus::new(CartridgeNes::new());
+        let mut bus = Bus::new(CartridgeNes::test_new());
         bus.load_ram(&vec![0x69, operand2]);
 
         cpu.program_counter = 0x00;
@@ -1168,7 +1261,7 @@ mod tests {
     pub fn do_sbc(operand1: u8, operand2: u8, result: u8, overflow: bool, carry: bool) {
         let mut cpu = Cpu6502::new();
         
-        let mut bus = Bus::new(CartridgeNes::new());
+        let mut bus = Bus::new(CartridgeNes::test_new());
         bus.load_ram(&vec![0xE9, operand2]);
 
         cpu.program_counter = 0x00;

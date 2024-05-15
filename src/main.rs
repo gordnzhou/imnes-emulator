@@ -11,16 +11,13 @@ mod bus;
 mod cartridge;
 mod ppu;
 mod mapper;
-mod palette;
 
 use bus::Bus;
 use cartridge::CartridgeNes;
 use cpu::Cpu6502;
-use ppu::Ppu2C03;
+use ppu::{Ppu2C03, SdlScreen, DISPLAY_HEIGHT, DISPLAY_WIDTH};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::pixels::PixelFormatEnum;
-use sdl2::rect::Rect;
 use sdl2::EventPump;
 
 use std::io::Write;
@@ -28,9 +25,7 @@ use std::fs::OpenOptions;
 
 const ROM_PATH: &str = "roms/smb.nes";
 
-const SCREEN_SCALE: u32 = 2;
-const DISPLAY_WIDTH: u32 = 256;
-const DISPLAY_HEIGHT: u32 = 240;
+const SCREEN_SCALE: u32 = 3;
 
 // (LSB) Right, Left, Down, Up, Start, Select, A, B (MSB)
 const KEYMAPPINGS: [Keycode; 8] = [
@@ -60,8 +55,8 @@ fn main() -> Result<(), String> {
 
     let video_subsystem = sdl_context.video()?;
 
-    let window_width = DISPLAY_WIDTH * SCREEN_SCALE;
-    let window_height = DISPLAY_HEIGHT * SCREEN_SCALE;
+    let window_width = (DISPLAY_WIDTH as u32) * SCREEN_SCALE;
+    let window_height = (DISPLAY_HEIGHT as u32) * SCREEN_SCALE;
     let window = video_subsystem
         .window("Gameboy Emulator", window_width, window_height)
         .position_centered()
@@ -77,34 +72,36 @@ fn main() -> Result<(), String> {
 
     let mut event_pump = sdl_context.event_pump()?;
 
-    let creator = canvas.texture_creator();
-    let mut texture = creator
-        .create_texture_streaming(PixelFormatEnum::ARGB8888, DISPLAY_WIDTH, DISPLAY_HEIGHT)
-        .map_err(|e| e.to_string())
-        .unwrap();
-    
-    let rect = Rect::new(0, 0, window_width, window_height);
-
     let cartridge = match CartridgeNes::from_ines_file(ROM_PATH) {
         Ok(cartridge) => cartridge,
         Err(e) => panic!("Unable to load cartridge: {}", e)
     };
 
-    let mut total_cycles: u32 = 0;
+    let sdl_screen = SdlScreen::new(canvas);
+
+    let mut total_cycles: u64 = 0;
     let mut joypad_state = 0;
     let mut cpu = Cpu6502::new();
-    let mut ppu = Ppu2C03::new();
+    let mut ppu = Ppu2C03::new(Box::new(sdl_screen));
     let mut bus = Bus::new(cartridge);
 
     cpu.reset(&mut bus); 
+
     loop {
-        ppu.clock(&mut bus);
-    
         if total_cycles % 3 == 0 {
             if bus.dma_transferring {
-                bus.dma_clock(total_cycles);
+                bus.dma_clock(total_cycles as u32);
             } else {
                 cpu.clock(&mut bus);
+            }
+        }
+
+        ppu.clock(&mut bus);
+
+        if total_cycles % 1000 == 0 {
+            match get_events(&mut event_pump, &mut joypad_state) {
+                Ok(_) => bus.update_joypad_state(joypad_state),
+                Err(e) => panic!("Emulator exited: {}", e)
             }
         }
 
@@ -112,26 +109,7 @@ fn main() -> Result<(), String> {
             cpu.nmi(&mut bus);
         }
 
-        if ppu.frame_complete() {
-            match get_events(&mut event_pump, &mut joypad_state) {
-                Ok(_) => bus.update_joypad_state(joypad_state),
-                Err(e) => panic!("Emulator exited: {}", e)
-            }
-
-            let frame = ppu.frame_buffer
-                .iter()
-                .flat_map(|color| vec![color.2, color.1, color.0, 0xFF])
-                .collect::<Vec<u8>>();
-
-            texture
-                .update(None, &frame, 4 * DISPLAY_WIDTH as usize)
-                .expect("texture update failed");
-
-            canvas.copy(&texture, None, rect).unwrap();
-            canvas.present();
-        }
-
-        total_cycles = total_cycles.wrapping_add(1);
+        total_cycles += 1;
     }
 }
 
