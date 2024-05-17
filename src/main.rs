@@ -12,7 +12,7 @@ mod cartridge;
 mod ppu;
 mod mapper;
 
-use bus::Bus;
+use bus::SystemBus;
 use cartridge::CartridgeNes;
 use cpu::Cpu6502;
 use ppu::{Ppu2C03, SdlScreen, DISPLAY_HEIGHT, DISPLAY_WIDTH};
@@ -23,9 +23,13 @@ use sdl2::EventPump;
 use std::io::Write;
 use std::fs::OpenOptions;
 
-const ROM_PATH: &str = "roms/smb.nes";
+const ROM_PATH: &str = "roms/smb3.nes";
 
 const SCREEN_SCALE: u32 = 3;
+
+pub trait SystemControl {
+    fn reset(&mut self);
+}
 
 // (LSB) Right, Left, Down, Up, Start, Select, A, B (MSB)
 const KEYMAPPINGS: [Keycode; 8] = [
@@ -83,9 +87,11 @@ fn main() -> Result<(), String> {
     let mut joypad_state = 0;
     let mut cpu = Cpu6502::new();
     let mut ppu = Ppu2C03::new(Box::new(sdl_screen));
-    let mut bus = Bus::new(cartridge);
+    let mut bus = SystemBus::new(cartridge);
 
-    cpu.reset(&mut bus); 
+    bus.reset(); 
+    cpu.reset(&mut bus);
+    ppu.reset();
 
     loop {
         if total_cycles % 3 == 0 {
@@ -107,6 +113,10 @@ fn main() -> Result<(), String> {
 
         if ppu.nmi_requested() {
             cpu.nmi(&mut bus);
+        }
+
+        if bus.cartridge.mapper.irq_active() {
+            cpu.irq(&mut bus);
         }
 
         total_cycles += 1;

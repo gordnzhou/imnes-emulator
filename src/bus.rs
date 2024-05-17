@@ -1,5 +1,6 @@
 use crate::cartridge::CartridgeNes;
 use crate::ppu::PpuBus;
+use crate::SystemControl;
 
 const CPU_RAM_START: usize = 0x0000;
 const CPU_RAM_END: usize = 0x1FFF;
@@ -14,12 +15,11 @@ const JOYPAD2_REG: usize = 0x4017;
 
 const CPU_RAM_LENGTH: usize = 0x800;
 
-pub struct Bus {
-    cartridge: CartridgeNes,
-    cpu_ram: [u8; CPU_RAM_LENGTH],
-    
+pub struct SystemBus {
+    pub cartridge: CartridgeNes,
     pub ppu_bus: PpuBus,
 
+    cpu_ram: [u8; CPU_RAM_LENGTH],
     joypad_registers: [u8; 2],
     joypad_state: [u8; 2],
 
@@ -33,7 +33,21 @@ pub struct Bus {
     io_registers: [u8; IO_REG_END - IO_REG_START + 1],
 }
 
-impl Bus {
+impl SystemControl for SystemBus {
+    fn reset(&mut self) {
+        self.cartridge.reset();
+        self.ppu_bus.reset();
+        self.joypad_registers = [0; 2];
+        self.joypad_state = [0; 2];
+        self.dma_page = 0x00;
+        self.dma_addr = 0x00;
+        self.dma_data = 0x00;
+        self.dma_transferring = false;
+        self.false_dma = true;
+    }
+}
+
+impl SystemBus {
     pub fn new(cartridge: CartridgeNes) -> Self {
         Self {
             cartridge,
@@ -126,12 +140,6 @@ impl Bus {
         self.ppu_bus.ppu_read(addr, &mut self.cartridge)
     }
 
-    #[allow(dead_code)]
-    // TODO: ppu write when?
-    pub fn ppu_write(&mut self, addr: usize, byte: u8) {
-        self.ppu_bus.ppu_write(addr, byte, &mut self.cartridge);
-    }
-
     // TODO: only one controller implemented
     pub fn update_joypad_state(&mut self, joypad_state: u8) {
         self.joypad_state[0] = joypad_state;
@@ -139,7 +147,7 @@ impl Bus {
 }
 
 #[cfg(test)]
-impl Bus {
+impl SystemBus {
     pub fn load_ram(&mut self, data: &[u8]) {
         for i in 0..data.len() {
             self.cartridge.cpu_write(i, data[i]);

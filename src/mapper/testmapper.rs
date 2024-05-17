@@ -1,9 +1,14 @@
+use crate::SystemControl;
+
 use super::Mapper;
 
 
 pub struct TestMapper {
     prg_rom: [u8; 0x10000],
-    chr_rom: [u8; 0x2000],
+}
+
+impl SystemControl for TestMapper {
+    fn reset(&mut self) {}
 }
 
 impl Mapper for TestMapper {
@@ -16,12 +21,12 @@ impl Mapper for TestMapper {
         true
     }
     
-    fn mapped_ppu_read(&mut self, _chr_rom: &mut Vec<u8>, addr: usize) -> u8 {
-        self.chr_rom[addr]
+    fn mapped_ppu_read(&mut self, chr_rom: &mut Vec<u8>, addr: usize) -> u8 {
+        chr_rom[addr]
     }
     
-    fn mapped_ppu_write(&mut self, _chr_rom: &mut Vec<u8>, addr: usize, byte: u8) {
-        self.chr_rom[addr] = byte;
+    fn mapped_ppu_write(&mut self, chr_rom: &mut Vec<u8>, addr: usize, byte: u8) {
+        chr_rom[addr] = byte;
     }
 }
 
@@ -30,7 +35,6 @@ impl TestMapper {
     pub fn new() -> Self {
         Self {
             prg_rom: [0; 0x10000],
-            chr_rom: [0; 0x2000],
         }
     }
 }

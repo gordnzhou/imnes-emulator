@@ -16,7 +16,7 @@ bitflags! {
 
     #[derive(Debug, Clone, Copy)]
     pub struct PpuMask: u8 {
-        const GREYSCALE_ON = 0b00000001;
+        const GREYSCALE_ON  = 0b00000001;
         const SHOW_BG_LEFT  = 0b00000010;
         const SHOW_SPR_LEFT = 0b00000100;
         const SHOW_BG       = 0b00001000;
@@ -149,6 +149,50 @@ impl LoopyPpuReg {
     pub const NAME_TABLE_X: u16 = 0b0000010000000000;
     pub const NAME_TABLE_Y: u16 = 0b0000100000000000;
     pub const FINE_Y: u16       = 0b0111000000000000;
+
+    #[inline]
+    pub fn increment_horizontal(&mut self) {
+        if self.coarse_x() >= 31 {
+            self.set_coarse_x(0);
+            self.set_name_table_x(!self.name_table_x());
+        } else {
+            self.set_coarse_x(self.coarse_x() + 1);
+        }
+    }
+
+    #[inline]
+    pub fn set_horizontal_to_tram(&mut self, tram_addr: &LoopyPpuReg) {
+        self.set_name_table_x(tram_addr.name_table_x());
+        self.set_coarse_x(tram_addr.coarse_x());
+    }
+
+    #[inline]
+    pub fn increment_vertical(&mut self) {
+        if self.fine_y() >= 7 {
+            self.set_fine_y(0);
+
+            if self.coarse_y() == 29 {
+                self.set_coarse_y(0);
+                self.set_name_table_y(!self.name_table_y());
+
+            } else if self.coarse_y() == 31 {
+                self.set_coarse_y(0);
+                
+            } else {
+                self.set_coarse_y(self.coarse_y() + 1)
+            }
+
+        } else {
+            self.set_fine_y(self.fine_y() + 1)
+        }
+    }
+
+    #[inline]
+    pub fn set_vertical_to_tram(&mut self, tram_addr: &LoopyPpuReg) {
+        self.set_name_table_y(tram_addr.name_table_y());
+        self.set_coarse_y(tram_addr.coarse_y());
+        self.set_fine_y(tram_addr.fine_y());
+    }
 
     #[inline]
     pub fn coarse_x(&self) -> u16 {

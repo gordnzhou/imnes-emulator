@@ -1,6 +1,6 @@
-use crate::cartridge::{Mirroring, CHR_ROM_SIZE, PRG_ROM_SIZE};
+use crate::{cartridge::{Mirroring, CHR_ROM_SIZE, PRG_ROM_SIZE}, SystemControl};
 
-use super::{Mapper, CHR_ROM_HI_END, CHR_ROM_HI_START, CHR_ROM_LO_END, CHR_ROM_LO_START, PRG_ROM_HI_END, PRG_ROM_HI_START, PRG_ROM_LO_END, PRG_ROM_LO_START};
+use super::{Mapper, CHR_ROM_HI_END, CHR_ROM_HI_START, CHR_ROM_LO_END, CHR_ROM_LO_START, PRG_ROM_END, PRG_ROM_HI_END, PRG_ROM_HI_START, PRG_ROM_LO_END, PRG_ROM_LO_START, PRG_ROM_START};
 
 const SAVE_RAM_START: usize = 0x6000;
 const SAVE_RAM_END: usize = 0x7FFF;
@@ -11,7 +11,6 @@ pub struct Mapper1 {
     save_ram: [u8; SAVE_RAM_SIZE],
     mirroring: Mirroring,
     prg_rom_banks: usize,
-    chr_rom_banks: usize,
     
     chr_bank_lo4: usize,
     chr_bank_hi4: usize,
@@ -24,6 +23,22 @@ pub struct Mapper1 {
     load_reg: u8,
     control_reg: u8,
     load_count: u8,
+}
+
+impl SystemControl for Mapper1 {
+    fn reset(&mut self) {
+        self.chr_bank_lo4 = 0;
+        self.chr_bank_hi4 = 0;
+        self.chr_bank_full8 = 0;
+
+        self.prg_bank_lo16 = 0;
+        self.prg_bank_hi16 = self.prg_rom_banks - 1;
+        self.prg_bank_full32 = 0;
+
+        self.load_reg = 0x00;
+        self.control_reg = 0x1C;
+        self.load_count = 0;
+    }
 }
 
 impl Mapper for Mapper1 {
@@ -50,14 +65,13 @@ impl Mapper for Mapper1 {
         }
     }
 
-    // TODO: 
     fn mapped_cpu_write(&mut self, _prg_rom: &mut Vec<u8>, addr: usize, byte: u8) -> bool {
         match addr {
             SAVE_RAM_START..=SAVE_RAM_END => {
                 self.save_ram[addr & 0x1FFF] = byte;
                 true
             }
-            PRG_ROM_LO_START..=PRG_ROM_HI_END => {
+            PRG_ROM_START..=PRG_ROM_END => {
                 if byte & 0b10000000 != 0 {
                     self.load_reg = 0x00;
                     self.load_count = 0;
@@ -125,10 +139,6 @@ impl Mapper for Mapper1 {
     }
 
     fn mapped_ppu_read(&mut self, chr_rom: &mut Vec<u8>, addr: usize) -> u8 {
-        if self.chr_rom_banks == 0 {
-            return chr_rom[addr];
-        }
-
         match addr {
             CHR_ROM_LO_START..=CHR_ROM_LO_END => {
                 if self.control_reg & 0b10000 != 0 {
@@ -148,38 +158,17 @@ impl Mapper for Mapper1 {
         }
     }
 
-    fn mapped_ppu_write(&mut self, chr_rom: &mut Vec<u8>, addr: usize, byte: u8) {
-        if self.chr_rom_banks == 0 {
-            chr_rom[addr] = byte;
-        }
-    }
-
     fn get_updated_mirroring(&self) -> Option<Mirroring> {
         Some(self.mirroring)
-    }
-
-    fn reset(&mut self) {
-        self.chr_bank_lo4 = 0;
-        self.chr_bank_hi4 = 0;
-        self.chr_bank_full8 = 0;
-
-        self.prg_bank_lo16 = 0;
-        self.prg_bank_hi16 = self.prg_rom_banks - 1;
-        self.prg_bank_full32 = 0;
-
-        self.load_reg = 0x00;
-        self.control_reg = 0x1C;
-        self.load_count = 0;
     }
 }
 
 impl Mapper1 {
-    pub fn new(prg_rom_banks: usize, chr_rom_banks: usize) -> Self {
+    pub fn new(prg_rom_banks: usize) -> Self {
         Self {
             save_ram: [0; SAVE_RAM_SIZE],
             mirroring: Mirroring::HORIZONTAL,
             prg_rom_banks,
-            chr_rom_banks,
 
             chr_bank_lo4: 0,
             chr_bank_hi4: 0,

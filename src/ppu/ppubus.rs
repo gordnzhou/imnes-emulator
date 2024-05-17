@@ -1,4 +1,4 @@
-use crate::cartridge::{CartridgeNes, Mirroring};
+use crate::{cartridge::{CartridgeNes, Mirroring}, SystemControl};
 
 use super::registers::{LoopyPpuReg, PpuCtrl, PpuMask, PpuStatus};
 
@@ -27,13 +27,30 @@ pub struct PpuBus {
     pub oam_addr_reg: u8,
     pub oam_data_reg: u8,
 
-    // Loop Registers
+    // Loopy Registers
     pub vram_addr: LoopyPpuReg,
     pub tram_addr: LoopyPpuReg,
     pub fine_x: u8,
 
     ppu_addr_latch: bool,
     ppu_data_buffer: u8,
+}
+
+impl SystemControl for PpuBus {
+    fn reset(&mut self) {
+        self.ctrl = PpuCtrl::from_bits_truncate(0);
+        self.mask = PpuMask::from_bits_truncate(0);
+        self.status = PpuStatus::from_bits_truncate(0);
+        self.oam_addr_reg = 0;
+        self.oam_data_reg = 0;
+
+        self.vram_addr = LoopyPpuReg::default();
+        self.tram_addr = LoopyPpuReg::default();
+        self.fine_x = 0;
+
+        self.ppu_addr_latch = false;
+        self.ppu_data_buffer = 0;
+    }
 }
 
 impl PpuBus {
@@ -49,11 +66,12 @@ impl PpuBus {
             oam_addr_reg: 0,
             oam_data_reg: 0,
 
-            ppu_addr_latch: false,
-            ppu_data_buffer: 0,
             vram_addr: LoopyPpuReg::default(),
             tram_addr: LoopyPpuReg::default(),
             fine_x: 0,
+
+            ppu_addr_latch: false,
+            ppu_data_buffer: 0
         }
     }
 

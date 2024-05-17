@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::bus::Bus;
+use crate::bus::SystemBus;
 
 use super::Cpu6502;
 
@@ -29,14 +29,14 @@ pub struct Opcode {
     pub opcode: u8,
     pub instr: Instr,
     pub addr_mode: AddrMode,
-    pub addr_mode_fn: fn(&mut Cpu6502, &mut Bus),
-    pub instr_fn: fn(&mut Cpu6502, &mut Bus) -> u32, 
+    pub addr_mode_fn: fn(&mut Cpu6502, &mut SystemBus),
+    pub instr_fn: fn(&mut Cpu6502, &mut SystemBus) -> u32, 
     pub cycles: u32, 
     pub illegal: bool,
 }
 
 impl Opcode {
-    pub fn execute_op(&self, cpu: &mut Cpu6502, bus: &mut Bus) -> u32 {
+    pub fn execute_op(&self, cpu: &mut Cpu6502, bus: &mut SystemBus) -> u32 {
         (self.addr_mode_fn)(cpu, bus);
         let extra_cycles = (self.instr_fn)(cpu, bus);
         self.cycles + extra_cycles

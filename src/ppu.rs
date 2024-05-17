@@ -6,7 +6,8 @@ mod screen;
 pub use ppubus::PpuBus;
 pub use screen::*;
 
-use crate::bus::Bus;
+use crate::bus::SystemBus;
+use crate::SystemControl;
 
 use self::ppubus::{ATTR_TABLE_START, NAME_TABLE_START, OAM_SIZE, PALETTE_TABLE_START};
 use self::registers::PpuStatus;
@@ -14,13 +15,32 @@ use self::palette::{Colour, DISPLAY_PALETTE};
 
 const SPRITE_CACHE_SIZE: usize = 8;
 
-const MAX_CYCLE: u32 = 340;
-const MAX_SCANLINE: i32 = 260;
-
 const OAM_ENTRY_BYTES: usize = 4;
 
 // number of bytes occupied by a single tile in pattern memory
 const TILE_BYTES: usize = 16;
+
+/// Does not render any pixels, but still updates shifters
+const S_PRE_RENDER: i32 = -1;
+
+/// First row of pixels are rendered in this scanline
+const S_RENDER_START: i32 = 0;
+
+/// Last row of pixels are rendered in this scanline
+const S_RENDER_END: i32 = 239;
+
+/// Idle scanline that occurs between rendering and VBLANK
+const S_POST_RENDER: i32 = 240;
+
+/// First scanline of the VBLANK Period
+const S_VBLANK_START: i32 = 241;
+
+/// Last scanline of VBLANK and final scanline of the frame
+const S_VBLANK_END: i32 = 260;
+
+/// Final cycle of each scanline
+const C_HBLANK_END: u32 = 340;
+
 
 #[derive(Clone, Copy)]
 struct OAMEntry {
@@ -84,12 +104,38 @@ pub struct Ppu2C03 {
     odd_frame: bool,
 }
 
+impl SystemControl for Ppu2C03 {
+    fn reset(&mut self) {
+        self.cycles = 0;
+        self.scanline = S_PRE_RENDER;
+
+        self.sprite_cache = [OAMEntry::default(); SPRITE_CACHE_SIZE];
+        self.sprite_cache_count = 0;
+        self.spr_patt_lo_shifter = [0; SPRITE_CACHE_SIZE];
+        self.spr_patt_hi_shifter = [0; SPRITE_CACHE_SIZE];
+        self.contains_spr_0 = false;
+        self.spr_0_rendered = false;
+
+        self.bg_next_tile_id = 0;
+        self.bg_next_tile_attr = 0;
+        self.bg_next_tile_lo = 0;
+        self.bg_next_tile_hi = 0;
+        self.bg_patt_lo_shifter = 0;
+        self.bg_patt_hi_shifter = 0;
+        self.bg_attr_lo_shifter = 0;
+        self.bg_attr_hi_shifter = 0;
+
+        self.nmi = false;
+        self.odd_frame = false;
+    }
+}
+
 impl Ppu2C03 {
     pub fn new(screen: Box<dyn NesScreen>) -> Self {
         Self { 
             screen,
             cycles: 0,
-            scanline: -1,
+            scanline: S_PRE_RENDER,
 
             sprite_cache: [OAMEntry::default(); SPRITE_CACHE_SIZE],
             sprite_cache_count: 0,
@@ -112,37 +158,38 @@ impl Ppu2C03 {
         }
     }
 
-    pub fn clock(&mut self, bus: &mut Bus) {
-        match self.scanline {
-            -1..=239 => {
-                let ppu_bus = &mut bus.ppu_bus;
+    pub fn clock(&mut self, bus: &mut SystemBus) {
 
-                if self.scanline == -1 && self.cycles == 1 {
-                    ppu_bus.status.set(PpuStatus::IN_VBLANK, false);
-                    ppu_bus.status.set(PpuStatus::SPR_OVERFLOW, false);
-                    ppu_bus.status.set(PpuStatus::SPR_0_HIT, false);
+        match self.scanline {
+            S_PRE_RENDER..=S_RENDER_END => {
+                if self.scanline == S_PRE_RENDER && self.cycles == 1 {
+                    bus.ppu_bus.status.set(PpuStatus::IN_VBLANK, false);
+                    bus.ppu_bus.status.set(PpuStatus::SPR_OVERFLOW, false);
+                    bus.ppu_bus.status.set(PpuStatus::SPR_0_HIT, false);
 
                     self.spr_patt_lo_shifter = [0; SPRITE_CACHE_SIZE];
                     self.spr_patt_hi_shifter = [0; SPRITE_CACHE_SIZE];
                 }
                 
+                // Background Graphics Processing 
                 match self.cycles {
-                    1..=256 | 321..=336 => {
-                        self.update_shifters(ppu_bus);
+                    2..=256 | 321..=337 => {
+                        self.update_shifters(&mut bus.ppu_bus);
 
                         match (self.cycles - 1) % 8 {
                             0 => { // fetch tile id
+
                                 self.load_bg_shifters();
-                                let bg_next_tile_id_addr = NAME_TABLE_START | ((ppu_bus.vram_addr.0 as usize) & 0x0FFF);
+                                let bg_next_tile_id_addr = NAME_TABLE_START | ((bus.ppu_bus.vram_addr.0 as usize) & 0x0FFF);
                                 self.bg_next_tile_id = bus.ppu_read(bg_next_tile_id_addr);
                             }
                             2 => { // fetch tile palette attribute
-                                let coarse_x = ppu_bus.vram_addr.coarse_x() as usize;
-                                let coarse_y = ppu_bus.vram_addr.coarse_y() as usize;
+                                let coarse_x = bus.ppu_bus.vram_addr.coarse_x() as usize;
+                                let coarse_y = bus.ppu_bus.vram_addr.coarse_y() as usize;
 
                                 let bg_next_tile_attr_addr = ATTR_TABLE_START 
-                                    | ((ppu_bus.vram_addr.name_table_y() as usize) << 11)
-                                    | ((ppu_bus.vram_addr.name_table_x() as usize) << 10)
+                                    | ((bus.ppu_bus.vram_addr.name_table_y() as usize) << 11)
+                                    | ((bus.ppu_bus.vram_addr.name_table_x() as usize) << 10)
                                     | ((coarse_y >> 2) << 3)
                                     | (coarse_x >> 2);
 
@@ -153,35 +200,42 @@ impl Ppu2C03 {
                                 self.bg_next_tile_attr &= 0x03;
                             },
                             4 => { // fetch LOW plane of tile pattern
-                                let bg_next_tile_lo_addr = ppu_bus.ctrl.bg_pattern_addr()
+                                let bg_next_tile_lo_addr = bus.ppu_bus.ctrl.bg_pattern_addr()
                                     + ((self.bg_next_tile_id as usize) * TILE_BYTES)
-                                    + ppu_bus.vram_addr.fine_y() as usize;
+                                    + bus.ppu_bus.vram_addr.fine_y() as usize;
 
                                 self.bg_next_tile_lo = bus.ppu_read(bg_next_tile_lo_addr);
                             },
                             6 => { // fetch HIGH plane of tile pattern
-                                let bg_next_tile_hi_addr = ppu_bus.ctrl.bg_pattern_addr()
+                                let bg_next_tile_hi_addr = bus.ppu_bus.ctrl.bg_pattern_addr()
                                     + ((self.bg_next_tile_id as usize) * TILE_BYTES)
-                                    + ppu_bus.vram_addr.fine_y() as usize
+                                    + bus.ppu_bus.vram_addr.fine_y() as usize
                                     + 8;
 
                                 self.bg_next_tile_hi = bus.ppu_read(bg_next_tile_hi_addr);
                             },
                             7 => { // increment vram horizontal scroll bits
-                                Ppu2C03::increment_vram_x(ppu_bus);
+                                if Ppu2C03::rendering_enabled(&mut bus.ppu_bus) {
+                                    bus.ppu_bus.vram_addr.increment_horizontal();
+                                }
                             },
                             _ => {},
                         }
 
                         if self.cycles == 256 {
-                            Ppu2C03::increment_vram_y(&mut bus.ppu_bus);
+                            if Ppu2C03::rendering_enabled(&mut bus.ppu_bus) {
+                                bus.ppu_bus.vram_addr.increment_vertical();
+                            }
                         }
                     }
                     257 => { // reset vram horizontal scroll bits
                         self.load_bg_shifters();
-                        Ppu2C03::set_vram_x_to_tram(&mut bus.ppu_bus);
+
+                        if Ppu2C03::rendering_enabled(&mut bus.ppu_bus) {
+                            bus.ppu_bus.vram_addr.set_horizontal_to_tram(&bus.ppu_bus.tram_addr);
+                        }
                     },
-                    337..=340 => {
+                    338 | 340 => {
                         if self.cycles & 0x01 == 0 {
                             let bg_next_tile_id_addr = NAME_TABLE_START | ((bus.ppu_bus.vram_addr.0 as usize) & 0x0FFF);
                             self.bg_next_tile_id = bus.ppu_read(bg_next_tile_id_addr);
@@ -190,13 +244,15 @@ impl Ppu2C03 {
                     _ => {}
                 }
 
-                if self.scanline == -1 && matches!(self.cycles, 280..=304) { // reset vram vertical scroll bits
-                    Ppu2C03::set_vram_y_to_tram(&mut bus.ppu_bus)
+                if self.scanline == S_PRE_RENDER && matches!(self.cycles, 280..=304) { // reset vram vertical scroll bits
+                    if Ppu2C03::rendering_enabled(&mut bus.ppu_bus) {
+                        bus.ppu_bus.vram_addr.set_vertical_to_tram(&bus.ppu_bus.tram_addr);
+                    }
                 };
 
-                // Sprite / Foreground Rendering 
+                // Sprite / Foreground Graphics Processing 
                 match self.cycles {
-                    257 if self.scanline >= 0 => { // fetch ALL sprites for next scanline and update SPR_OVERFLOW
+                    257 if self.scanline >= S_RENDER_START => { // fetch ALL sprites for next scanline and update SPR_OVERFLOW
                         self.sprite_cache = [OAMEntry::default(); SPRITE_CACHE_SIZE];
                         self.spr_patt_lo_shifter = [0; SPRITE_CACHE_SIZE];
                         self.spr_patt_hi_shifter = [0; SPRITE_CACHE_SIZE];
@@ -206,10 +262,12 @@ impl Ppu2C03 {
     
                         let mut oam_pos = 0;
 
+                        let ppu_bus = &mut bus.ppu_bus;
+
                         while oam_pos < OAM_SIZE && self.sprite_cache_count <= SPRITE_CACHE_SIZE {
-                            let sprite_dist = self.scanline as i32 - bus.ppu_bus.read_oam(oam_pos + 0) as i32;
-    
-                            if sprite_dist >= 0 && sprite_dist < bus.ppu_bus.ctrl.spr_height() as i32 {
+                            let sprite_dist = self.scanline as i32 - ppu_bus.read_oam(oam_pos + 0) as i32;
+                            
+                            if sprite_dist >= 0 && sprite_dist < ppu_bus.ctrl.spr_height() as i32 {
     
                                 if self.sprite_cache_count < SPRITE_CACHE_SIZE {
 
@@ -218,14 +276,14 @@ impl Ppu2C03 {
                                     }
 
                                     self.sprite_cache[self.sprite_cache_count] = OAMEntry {
-                                        y: bus.ppu_bus.read_oam(oam_pos + 0) as usize,
-                                        id: bus.ppu_bus.read_oam(oam_pos + 1) as usize,
-                                        attributes: bus.ppu_bus.read_oam(oam_pos + 2) as usize,
-                                        x: bus.ppu_bus.read_oam(oam_pos + 3) as usize,
+                                        y: ppu_bus.read_oam(oam_pos + 0) as usize,
+                                        id: ppu_bus.read_oam(oam_pos + 1) as usize,
+                                        attributes: ppu_bus.read_oam(oam_pos + 2) as usize,
+                                        x: ppu_bus.read_oam(oam_pos + 3) as usize,
                                     };
                                     self.sprite_cache_count += 1;
                                 } else {
-                                    bus.ppu_bus.status.set(PpuStatus::SPR_OVERFLOW, true);
+                                    ppu_bus.status.set(PpuStatus::SPR_OVERFLOW, true);
                                 }
                             }
     
@@ -245,7 +303,7 @@ impl Ppu2C03 {
                                     | (sprite.id * TILE_BYTES)
                                     | y_offset
                             } else {
-                                let tile_offset = if y_dist < 8 {
+                                let tile_offset = if (y_dist < 8) ^ sprite.y_flipped() {
                                     (sprite.id & 0b11111110) * TILE_BYTES
                                 } else {
                                     ((sprite.id & 0b11111110) + 1) * TILE_BYTES
@@ -271,9 +329,9 @@ impl Ppu2C03 {
                     _ => {}
                 }
             }
-            240 => {} // Idle Scanline
-            241..=260 => { // In VBlank
-                if self.scanline == 241 && self.cycles == 1 {
+            S_POST_RENDER => {} // Idle Scanline
+            S_VBLANK_START..=S_VBLANK_END => { // In VBlank
+                if self.scanline == S_VBLANK_START && self.cycles == 1 {
                     bus.ppu_bus.status.set(PpuStatus::IN_VBLANK, true);
 
                     if bus.ppu_bus.ctrl.nmi_enabled() {
@@ -284,13 +342,11 @@ impl Ppu2C03 {
             _ => {}
         }
 
-        // Render pixel if in visible range
-        let ppu_bus = &mut bus.ppu_bus;
-
+        // Background Rendering
         let mut bg_pixel = 0;
         let mut bg_palette = 0;
-        if ppu_bus.mask.show_bg() && (ppu_bus.mask.show_bg_left() || self.cycles >= 9) {
-            let mask = 0x8000 >> ppu_bus.fine_x;
+        if bus.ppu_bus.mask.show_bg() && (bus.ppu_bus.mask.show_bg_left() || self.cycles >= 9) {
+            let mask = 0x8000 >> bus.ppu_bus.fine_x;
 
             let bg_pixel_bot = ((self.bg_patt_lo_shifter & mask) != 0) as usize;
             let bg_pixel_top = ((self.bg_patt_hi_shifter & mask) != 0) as usize;
@@ -301,12 +357,12 @@ impl Ppu2C03 {
             bg_palette = (bg_palette_top << 1) | bg_palette_bot
         }
 
+        // Sprite / Foreground Rendering
         let mut spr_pixel = 0;
         let mut spr_palette = 0;
         let mut spr_priority = false;
         self.spr_0_rendered = false;
-
-        if ppu_bus.mask.show_spr() && (ppu_bus.mask.show_spr_left() || self.cycles >= 9) {
+        if bus.ppu_bus.mask.show_spr() && (bus.ppu_bus.mask.show_spr_left() || self.cycles >= 9) {
                 self.spr_0_rendered = false;
 
             for i in 0..self.sprite_cache_count {
@@ -334,7 +390,7 @@ impl Ppu2C03 {
             }
         }
 
-        // resolve background and sprite priority
+        // Resolve Background and Sprite/Foreground priority
         let (pixel, palette) = match (bg_pixel, spr_pixel) {
             (0, 0) => (0, 0),
             (0, spr_pixel) => (spr_pixel, spr_palette),
@@ -342,16 +398,16 @@ impl Ppu2C03 {
             (bg_pixel, spr_pixel) => {
                 // check for SPR_0_HIT flag, which occurs only if BG and SPR pixels are both non-zero
                 if self.contains_spr_0 && self.spr_0_rendered && self.scanline >= 2
-                    && ppu_bus.mask.show_bg() && ppu_bus.mask.show_spr() {
+                    && bus.ppu_bus.mask.show_bg() && bus.ppu_bus.mask.show_spr() {
                     
-                    let spr_0_hit = if !(ppu_bus.mask.show_bg_left() || ppu_bus.mask.show_spr_left()) {
+                    let spr_0_hit = if !(bus.ppu_bus.mask.show_bg_left() || bus.ppu_bus.mask.show_spr_left()) {
                         matches!(self.cycles, 9..=257)
                     } else {
                         matches!(self.cycles, 1..=257)
                     };
 
                     if spr_0_hit {
-                        ppu_bus.status.set(PpuStatus::SPR_0_HIT, spr_0_hit);
+                        bus.ppu_bus.status.set(PpuStatus::SPR_0_HIT, spr_0_hit);
                     }
                 }
 
@@ -363,28 +419,36 @@ impl Ppu2C03 {
             }
         };
 
-
-        if self.scanline >= 0 {
-            self.screen.place_pixel(self.cycles as usize, self.scanline as usize, 
+        // Draw Final Pixel
+        if self.scanline >= 0 && self.cycles >= 1 {
+            self.screen.place_pixel(self.cycles as usize - 1, self.scanline as usize, 
                 Ppu2C03::get_colour_from_palette(bus, palette, pixel));
         }
 
+
+        // Update PPU state
         self.cycles += 1;
 
-        if self.odd_frame && self.cycles == MAX_CYCLE && self.scanline == -1 {
-            self.cycles += 1;
+        if Ppu2C03::rendering_enabled(&mut bus.ppu_bus) {
+
+            if self.cycles == 260 && self.scanline < S_POST_RENDER {
+                bus.cartridge.mapper.notify_scanline();
+            }
+
+            if self.odd_frame && self.cycles == C_HBLANK_END && self.scanline == S_PRE_RENDER {
+                self.cycles += 1;
+            }
         }
 
-        if self.cycles > MAX_CYCLE {
+        if self.cycles > C_HBLANK_END {
 
             self.cycles = 0;
             self.scanline += 1;
 
-            if self.scanline > MAX_SCANLINE {
+            if self.scanline > S_VBLANK_END {
 
                 self.scanline = -1;
 
-                // Display the current frame!
                 self.screen.draw_frame();
 
                 self.odd_frame = !self.odd_frame;
@@ -397,7 +461,7 @@ impl Ppu2C03 {
     }
 
     #[inline]
-    fn get_colour_from_palette(bus: &mut Bus, palette: usize, pixel: usize) -> Colour {
+    fn get_colour_from_palette(bus: &mut SystemBus, palette: usize, pixel: usize) -> Colour {
         let palette_index = bus.ppu_read(PALETTE_TABLE_START + (palette << 2) + pixel) as usize;
         DISPLAY_PALETTE[palette_index]
     }
@@ -437,60 +501,6 @@ impl Ppu2C03 {
         }
     }
 
-    #[inline]
-    fn increment_vram_x(ppu_bus: &mut PpuBus) {
-        if Ppu2C03::rendering_enabled(ppu_bus) {
-
-            if ppu_bus.vram_addr.coarse_x() >= 31 {
-                ppu_bus.vram_addr.set_coarse_x(0);
-                ppu_bus.vram_addr.set_name_table_x(!ppu_bus.vram_addr.name_table_x());
-            } else {
-                ppu_bus.vram_addr.set_coarse_x(ppu_bus.vram_addr.coarse_x() + 1);
-            }
-        }
-    }
-
-    #[inline]
-    fn increment_vram_y(ppu_bus: &mut PpuBus) {
-        if Ppu2C03::rendering_enabled(ppu_bus) {
-
-            if ppu_bus.vram_addr.fine_y() >= 7 {
-                ppu_bus.vram_addr.set_fine_y(0);
-
-                if ppu_bus.vram_addr.coarse_y() == 29 {
-                    ppu_bus.vram_addr.set_coarse_y(0);
-                    ppu_bus.vram_addr.set_name_table_y(!ppu_bus.vram_addr.name_table_y());
-
-                } else if ppu_bus.vram_addr.coarse_y() == 31 {
-                    ppu_bus.vram_addr.set_coarse_y(0);
-                    
-                } else {
-                    ppu_bus.vram_addr.set_coarse_y(ppu_bus.vram_addr.coarse_y() + 1)
-                }
-
-            } else {
-                ppu_bus.vram_addr.set_fine_y(ppu_bus.vram_addr.fine_y() + 1)
-            }
-        }
-    }
-
-    #[inline]
-    fn set_vram_x_to_tram(ppu_bus: &mut PpuBus) {
-        if Ppu2C03::rendering_enabled(ppu_bus) {
-            ppu_bus.vram_addr.set_name_table_x(ppu_bus.tram_addr.name_table_x());
-            ppu_bus.vram_addr.set_coarse_x(ppu_bus.tram_addr.coarse_x());
-        }
-    }
-
-    #[inline]
-    fn set_vram_y_to_tram(ppu_bus: &mut PpuBus) {
-        if Ppu2C03::rendering_enabled(ppu_bus) {
-            ppu_bus.vram_addr.set_name_table_y(ppu_bus.tram_addr.name_table_y());
-            ppu_bus.vram_addr.set_coarse_y(ppu_bus.tram_addr.coarse_y());
-            ppu_bus.vram_addr.set_fine_y(ppu_bus.tram_addr.fine_y());
-        }
-    }
- 
     pub fn nmi_requested(&mut self) -> bool {
         let ret = self.nmi;
         self.nmi = false;
