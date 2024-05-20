@@ -12,7 +12,10 @@ bitflags = "2.5.0"
 
 [dependencies.sdl2]
 version = "0.36"
-features = ["use_mac_framework", "unsafe_textures"]
+features = ["bundled"]
 
 [dev-dependencies]
 serde_json = "1.0"
+
+[profile.dev]
+opt-level = 1

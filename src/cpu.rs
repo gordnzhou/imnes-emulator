@@ -71,10 +71,11 @@ impl Cpu6502 {
         self.total_cycles += 1;
     }
 
+    #[inline]
     fn execute_instruction(&mut self, bus: &mut SystemBus) {
         let opcode = self.advance_pc(bus);
 
-        self.cycles += match OPCODES_LOOKUP.get(&opcode) {
+        self.cycles += match OPCODES_LOOKUP[opcode as usize] {
             Some(op) => {
                 if op.illegal && !ILLEGAL_OPCODES_ENABLED {
                     panic!("Illegal Opcode: {:02x}", opcode);
@@ -1037,7 +1038,7 @@ fn log_to_file(message: &str) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{bus::SystemBus, cartridge::CartridgeNes, cpu::StatusFlag};
+    use crate::{bus::SystemBus, cpu::StatusFlag};
     use super::{opcode::OPCODES_LOOKUP, Cpu6502};
     use serde_json::Value;
     use std::fs::File;
@@ -1067,8 +1068,6 @@ mod tests {
                 println!("TESTING: {}", name);
                 
                 let initial_state = data.get("initial").unwrap();
-
-                let cartridge = CartridgeNes::test_new();
         
                 let mut cpu = Cpu6502::new();
                 cpu.program_counter = initial_state.get("pc").unwrap().as_u64().unwrap() as u16;
@@ -1078,7 +1077,7 @@ mod tests {
                 cpu.y_index_reg = initial_state.get("y").unwrap().as_u64().unwrap() as u8;
                 cpu.processor_status = initial_state.get("p").unwrap().as_u64().unwrap() as u8;
 
-                let mut bus = SystemBus::new(cartridge);
+                let mut bus = SystemBus::test_new();
 
                 let ram_contents = initial_state.get("ram").unwrap().as_array().unwrap();
                 for item in ram_contents {
@@ -1091,7 +1090,7 @@ mod tests {
                 }
 
                 let opcode = cpu.advance_pc(&mut bus);
-                match OPCODES_LOOKUP.get(&opcode) {
+                match OPCODES_LOOKUP[opcode as usize] {
                     Some(op) => {
                         // println!("{:04X} OPCODE:{:?} IMM:{:02X},{:02X}     A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}  CYC:{}", 
                         //     cpu.program_counter.wrapping_sub(1), op.instr, cpu.read_byte(&mut bus, cpu.program_counter), cpu.read_byte(&mut bus, cpu.program_counter.wrapping_add(1)),
@@ -1137,7 +1136,7 @@ mod tests {
     pub fn test_lda() {
         let mut cpu = Cpu6502::new();
 
-        let mut bus = SystemBus::new(CartridgeNes::test_new());
+        let mut bus = SystemBus::test_new();
         bus.load_ram(&vec![0xA9, 0x11, 0xA5, 0xFE, 0xB5, 0xFC, 0xAD, 0x34, 0x12, 0xBD, 0x34, 0x12, 0xB9, 0x34, 0x12]);
 
         cpu.program_counter = 0x00;
@@ -1149,7 +1148,7 @@ mod tests {
         cpu.write_byte(&mut bus, 0x1237, 0x55);
 
         let mut opcode = cpu.advance_pc(&mut bus);
-        match OPCODES_LOOKUP.get(&opcode) {
+        match OPCODES_LOOKUP[opcode as usize] {
             Some(op) => {
                 op.execute_op(&mut cpu, &mut bus)
             },
@@ -1159,7 +1158,7 @@ mod tests {
         assert_eq!(cpu.accumulator, 0x11, "FAILED: imm");
 
         opcode = cpu.advance_pc(&mut bus);
-        match OPCODES_LOOKUP.get(&opcode) {
+        match OPCODES_LOOKUP[opcode as usize] {
             Some(op) => op.execute_op(&mut cpu, &mut bus),
             None => panic!("Unsupported Opcode: {}", opcode)
         };
@@ -1167,28 +1166,28 @@ mod tests {
         assert!(cpu.accumulator == 0x22, "FAILED: zpg");
 
         opcode = cpu.advance_pc(&mut bus);
-        match OPCODES_LOOKUP.get(&opcode) {
+        match OPCODES_LOOKUP[opcode as usize] {
             Some(op) => op.execute_op(&mut cpu, &mut bus),
             None => panic!("Unsupported Opcode: {}", opcode)
         };
         assert_eq!(cpu.accumulator, 0x22, "FAILED: zpx");
 
         opcode = cpu.advance_pc(&mut bus);
-        match OPCODES_LOOKUP.get(&opcode) {
+        match OPCODES_LOOKUP[opcode as usize] {
             Some(op) => op.execute_op(&mut cpu, &mut bus),
             None => panic!("Unsupported Opcode: {}", opcode)
         };
         assert_eq!(cpu.accumulator, 0x33, "FAILED: abs");
 
         opcode = cpu.advance_pc(&mut bus);
-        match OPCODES_LOOKUP.get(&opcode) {
+        match OPCODES_LOOKUP[opcode as usize] {
             Some(op) => op.execute_op(&mut cpu, &mut bus),
             None => panic!("Unsupported Opcode: {}", opcode)
         };
         assert_eq!(cpu.accumulator, 0x44, "FAILED: abx");
 
         opcode = cpu.advance_pc(&mut bus);
-        match OPCODES_LOOKUP.get(&opcode) {
+        match OPCODES_LOOKUP[opcode as usize] {
             Some(op) => op.execute_op(&mut cpu, &mut bus),
             None => panic!("Unsupported Opcode: {}", opcode)
         };
@@ -1197,7 +1196,7 @@ mod tests {
 
     #[test]
     pub fn test_stack() {
-        let mut bus = SystemBus::new(CartridgeNes::test_new());
+        let mut bus = SystemBus::test_new();
         let mut cpu = Cpu6502::new();
 
         cpu.push_byte_to_stack(&mut bus, 0x88);
@@ -1245,14 +1244,14 @@ mod tests {
     pub fn do_adc(operand1: u8, operand2: u8, result: u8, overflow: bool, carry: bool) {
         let mut cpu = Cpu6502::new();
 
-        let mut bus = SystemBus::new(CartridgeNes::test_new());
+        let mut bus = SystemBus::test_new();
         bus.load_ram(&vec![0x69, operand2]);
 
         cpu.program_counter = 0x00;
         cpu.accumulator = operand1;
 
         let opcode = cpu.advance_pc(&mut bus);
-        match OPCODES_LOOKUP.get(&opcode) {
+        match OPCODES_LOOKUP[opcode as usize] {
             Some(op) => op.execute_op(&mut cpu, &mut bus),
             None => panic!("Unsupported Opcode: {}", opcode)
         };
@@ -1265,7 +1264,7 @@ mod tests {
     pub fn do_sbc(operand1: u8, operand2: u8, result: u8, overflow: bool, carry: bool) {
         let mut cpu = Cpu6502::new();
         
-        let mut bus = SystemBus::new(CartridgeNes::test_new());
+        let mut bus = SystemBus::test_new();
         bus.load_ram(&vec![0xE9, operand2]);
 
         cpu.program_counter = 0x00;
@@ -1273,7 +1272,7 @@ mod tests {
         cpu.accumulator = operand1;
 
         let opcode = cpu.advance_pc(&mut bus);
-        match OPCODES_LOOKUP.get(&opcode) {
+        match OPCODES_LOOKUP[opcode as usize] {
             Some(op) => op.execute_op(&mut cpu, &mut bus),
             None => panic!("Unsupported Opcode: {}", opcode)
         };

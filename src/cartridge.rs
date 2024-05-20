@@ -20,7 +20,7 @@ pub enum Mirroring {
 
 pub struct CartridgeNes {
     mirroring: Mirroring,
-    pub mapper: Box<dyn Mapper>,
+    mapper: Box<dyn Mapper>,
     no_chr_rom: bool,
     prg_rom: Vec<u8>,
     chr_rom: Vec<u8>,
@@ -140,6 +140,14 @@ impl CartridgeNes {
             Some(mirroring) => mirroring,
             None => self.mirroring,
         }
+    }
+
+    pub fn notify_scanline(&mut self) {
+        self.mapper.notify_scanline()
+    }
+
+    pub fn irq_active(&mut self) -> bool {
+        self.mapper.irq_active()
     }
 }
 

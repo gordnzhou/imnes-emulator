@@ -1,3 +1,4 @@
+use crate::apu::Apu2A03;
 use crate::cartridge::CartridgeNes;
 use crate::ppu::PpuBus;
 use crate::SystemControl;
@@ -6,18 +7,20 @@ const CPU_RAM_START: usize = 0x0000;
 const CPU_RAM_END: usize = 0x1FFF;
 const PPU_REG_START: usize = 0x2000;
 const PPU_REG_END: usize = 0x3FFF;
-const IO_REG_START: usize = 0x4000;
-const IO_REG_END: usize = 0x401F;
 
 pub const DMA_REG_ADDR: usize = 0x4014;
 const JOYPAD1_REG: usize = 0x4016;
 const JOYPAD2_REG: usize = 0x4017;
+
+const APU_REG_START: usize = 0x4000;
+const APU_REG_END: usize = 0x4013;
 
 const CPU_RAM_LENGTH: usize = 0x800;
 
 pub struct SystemBus {
     pub cartridge: CartridgeNes,
     pub ppu_bus: PpuBus,
+    pub apu: Apu2A03,
 
     cpu_ram: [u8; CPU_RAM_LENGTH],
     joypad_registers: [u8; 2],
@@ -28,9 +31,6 @@ pub struct SystemBus {
     dma_data: u8,
     pub dma_transferring: bool,
     false_dma: bool,
-
-    // TODO: Add APU Registers
-    io_registers: [u8; IO_REG_END - IO_REG_START + 1],
 }
 
 impl SystemControl for SystemBus {
@@ -48,10 +48,11 @@ impl SystemControl for SystemBus {
 }
 
 impl SystemBus {
-    pub fn new(cartridge: CartridgeNes) -> Self {
+    pub fn new(cartridge: CartridgeNes, apu: Apu2A03) -> Self {
         Self {
             cartridge,
             cpu_ram: [0; CPU_RAM_LENGTH],
+            apu,
 
             ppu_bus: PpuBus::new(),
 
@@ -63,8 +64,6 @@ impl SystemBus {
             dma_data: 0,
             dma_transferring: false,
             false_dma: true,
-
-            io_registers: [0; IO_REG_END - IO_REG_START + 1],
         }
     }
 
@@ -83,9 +82,10 @@ impl SystemBus {
             JOYPAD1_REG | JOYPAD2_REG => {
                 let ret = (self.joypad_registers[addr & 0x01] & 0b10000000) != 0;
                 self.joypad_registers[addr & 0x01] <<= 1;
+
                 ret as u8
             }
-            IO_REG_START..=IO_REG_END => self.io_registers[addr - IO_REG_START],
+            APU_REG_START..=APU_REG_END | 0x4015  => self.apu.read_register(addr),
             _ => 0
         }
     }
@@ -105,10 +105,11 @@ impl SystemBus {
                 self.dma_addr = 0x00;
                 self.dma_transferring = true;
             }
-            JOYPAD1_REG | JOYPAD2_REG => {
-                self.joypad_registers[addr & 0x01] = self.joypad_state[addr & 0x01];
+            JOYPAD1_REG => {
+                self.joypad_registers[0] = self.joypad_state[0];
+                self.joypad_registers[1] = self.joypad_state[1];
             },
-            IO_REG_START..=IO_REG_END => self.io_registers[addr - IO_REG_START] = byte,
+            APU_REG_START..=APU_REG_END | 0x4015 | 0x4017 => self.apu.write_register(addr, byte),
             _ => {}
         }
     }
@@ -140,9 +141,13 @@ impl SystemBus {
         self.ppu_bus.ppu_read(addr, &mut self.cartridge)
     }
 
-    // TODO: only one controller implemented
-    pub fn update_joypad_state(&mut self, joypad_state: u8) {
-        self.joypad_state[0] = joypad_state;
+    pub fn update_joypad_state(&mut self, joypad_state1: u8, joypad_state2: u8) {
+        self.joypad_state[0] = joypad_state1;
+        self.joypad_state[1] = joypad_state2;
+    }
+
+    pub fn irq_active(&mut self) -> bool {
+        self.cartridge.irq_active() || self.apu.irq_active()
     }
 }
 
@@ -151,6 +156,25 @@ impl SystemBus {
     pub fn load_ram(&mut self, data: &[u8]) {
         for i in 0..data.len() {
             self.cartridge.cpu_write(i, data[i]);
+        }
+    }
+
+    pub fn test_new() -> Self {
+        Self {
+            cartridge: CartridgeNes::test_new(),
+            cpu_ram: [0; CPU_RAM_LENGTH],
+            apu: Apu2A03::test_new(),
+
+            ppu_bus: PpuBus::new(),
+
+            joypad_registers: [0; 2],
+            joypad_state: [0; 2],
+
+            dma_page: 0,
+            dma_addr: 0,
+            dma_data: 0,
+            dma_transferring: false,
+            false_dma: true,
         }
     }
 }

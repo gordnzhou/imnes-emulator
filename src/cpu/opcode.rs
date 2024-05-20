@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::bus::SystemBus;
 
 use super::Cpu6502;
@@ -24,7 +22,9 @@ pub enum Instr {
     SHX, SHY, SLO, SRE, TAS, USBC, JAM,
 }
 
+
 #[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
 pub struct Opcode {
     pub opcode: u8,
     pub instr: Instr,
@@ -489,10 +489,10 @@ lazy_static! {
         Opcode::new(0xF2, AddrMode::IMP, Instr::JAM, 2, true),
     ];
 
-    pub static ref OPCODES_LOOKUP: HashMap<u8, &'static Opcode> = {
-        let mut lookup = HashMap::new();
+    pub static ref OPCODES_LOOKUP: [Option<&'static Opcode>; 256] = {
+        let mut lookup = [None; 256];
         for op in &*OPCODES {
-            lookup.insert(op.opcode, op);
+            lookup[op.opcode as usize] = Some(op);
         }
         lookup
     };

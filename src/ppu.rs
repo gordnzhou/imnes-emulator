@@ -1,13 +1,11 @@
 mod ppubus;
 mod registers;
 mod palette;
-mod screen;
 
 pub use ppubus::PpuBus;
-pub use screen::*;
 
 use crate::bus::SystemBus;
-use crate::SystemControl;
+use crate::{SystemControl, DISPLAY_HEIGHT, DISPLAY_WIDTH};
 
 use self::ppubus::{ATTR_TABLE_START, NAME_TABLE_START, OAM_SIZE, PALETTE_TABLE_START};
 use self::registers::PpuStatus;
@@ -80,7 +78,7 @@ impl Default for OAMEntry {
 }
 
 pub struct Ppu2C03 {
-    screen: Box<dyn NesScreen>,
+    frame: [Colour; DISPLAY_HEIGHT * DISPLAY_WIDTH],
     pub cycles: u32,
     pub scanline: i32,
 
@@ -102,6 +100,7 @@ pub struct Ppu2C03 {
 
     nmi: bool,
     odd_frame: bool,
+    frame_complete: bool,
 }
 
 impl SystemControl for Ppu2C03 {
@@ -131,9 +130,9 @@ impl SystemControl for Ppu2C03 {
 }
 
 impl Ppu2C03 {
-    pub fn new(screen: Box<dyn NesScreen>) -> Self {
+    pub fn new() -> Self {
         Self { 
-            screen,
+            frame: [DISPLAY_PALETTE[0]; DISPLAY_HEIGHT * DISPLAY_WIDTH],
             cycles: 0,
             scanline: S_PRE_RENDER,
 
@@ -155,6 +154,7 @@ impl Ppu2C03 {
 
             nmi: false,
             odd_frame: false,
+            frame_complete: false,
         }
     }
 
@@ -342,87 +342,87 @@ impl Ppu2C03 {
             _ => {}
         }
 
-        // Background Rendering
-        let mut bg_pixel = 0;
-        let mut bg_palette = 0;
-        if bus.ppu_bus.mask.show_bg() && (bus.ppu_bus.mask.show_bg_left() || self.cycles >= 9) {
-            let mask = 0x8000 >> bus.ppu_bus.fine_x;
-
-            let bg_pixel_bot = ((self.bg_patt_lo_shifter & mask) != 0) as usize;
-            let bg_pixel_top = ((self.bg_patt_hi_shifter & mask) != 0) as usize;
-            bg_pixel = (bg_pixel_top << 1) | bg_pixel_bot;
-
-            let bg_palette_bot = ((self.bg_attr_lo_shifter & mask) != 0) as usize;
-            let bg_palette_top = ((self.bg_attr_hi_shifter & mask) != 0) as usize;
-            bg_palette = (bg_palette_top << 1) | bg_palette_bot
-        }
-
-        // Sprite / Foreground Rendering
-        let mut spr_pixel = 0;
-        let mut spr_palette = 0;
-        let mut spr_priority = false;
-        self.spr_0_rendered = false;
-        if bus.ppu_bus.mask.show_spr() && (bus.ppu_bus.mask.show_spr_left() || self.cycles >= 9) {
-                self.spr_0_rendered = false;
-
-            for i in 0..self.sprite_cache_count {
-                let sprite = &mut self.sprite_cache[i];
-
-                if sprite.x > 0 {
-                    continue;
-                }
-                
-                let spr_pixel_bot = ((self.spr_patt_lo_shifter[i] & 0b10000000) != 0) as usize;
-                let spr_pixel_top = ((self.spr_patt_hi_shifter[i] & 0b10000000) != 0) as usize;
-                spr_pixel = (spr_pixel_top << 1) | spr_pixel_bot;
-
-                spr_palette = sprite.palette() + 0x04;
-                spr_priority = sprite.priority();
-
-                if spr_pixel != 0 {
-
-                    if i == 0 {
-                        self.spr_0_rendered = true;
-                    }
-
-                    break;
-                }
-            }
-        }
-
-        // Resolve Background and Sprite/Foreground priority
-        let (pixel, palette) = match (bg_pixel, spr_pixel) {
-            (0, 0) => (0, 0),
-            (0, spr_pixel) => (spr_pixel, spr_palette),
-            (bg_pixel, 0) => (bg_pixel, bg_palette),
-            (bg_pixel, spr_pixel) => {
-                // check for SPR_0_HIT flag, which occurs only if BG and SPR pixels are both non-zero
-                if self.contains_spr_0 && self.spr_0_rendered && self.scanline >= 2
-                    && bus.ppu_bus.mask.show_bg() && bus.ppu_bus.mask.show_spr() {
-                    
-                    let spr_0_hit = if !(bus.ppu_bus.mask.show_bg_left() || bus.ppu_bus.mask.show_spr_left()) {
-                        matches!(self.cycles, 9..=257)
-                    } else {
-                        matches!(self.cycles, 1..=257)
-                    };
-
-                    if spr_0_hit {
-                        bus.ppu_bus.status.set(PpuStatus::SPR_0_HIT, spr_0_hit);
-                    }
-                }
-
-                if spr_priority {
-                    (spr_pixel, spr_palette)
-                } else {
-                    (bg_pixel, bg_palette)
-                }
-            }
-        };
-
         // Draw Final Pixel
-        if self.scanline >= 0 && self.cycles >= 1 {
-            self.screen.place_pixel(self.cycles as usize - 1, self.scanline as usize, 
-                Ppu2C03::get_colour_from_palette(bus, palette, pixel));
+        if matches!(self.scanline, 0..=239) && matches!(self.cycles, 1..=256) {
+            // Background Rendering
+            let mut bg_pixel = 0;
+            let mut bg_palette = 0;
+            if bus.ppu_bus.mask.show_bg() && (bus.ppu_bus.mask.show_bg_left() || self.cycles >= 9) {
+                let mask = 0x8000 >> bus.ppu_bus.fine_x;
+
+                let bg_pixel_bot = ((self.bg_patt_lo_shifter & mask) != 0) as usize;
+                let bg_pixel_top = ((self.bg_patt_hi_shifter & mask) != 0) as usize;
+                bg_pixel = (bg_pixel_top << 1) | bg_pixel_bot;
+
+                let bg_palette_bot = ((self.bg_attr_lo_shifter & mask) != 0) as usize;
+                let bg_palette_top = ((self.bg_attr_hi_shifter & mask) != 0) as usize;
+                bg_palette = (bg_palette_top << 1) | bg_palette_bot
+            }
+
+            // Sprite / Foreground Rendering
+            let mut spr_pixel = 0;
+            let mut spr_palette = 0;
+            let mut spr_priority = false;
+            self.spr_0_rendered = false;
+            if bus.ppu_bus.mask.show_spr() && (bus.ppu_bus.mask.show_spr_left() || self.cycles >= 9) {
+                    self.spr_0_rendered = false;
+
+                for i in 0..self.sprite_cache_count {
+                    let sprite = &mut self.sprite_cache[i];
+
+                    if sprite.x > 0 {
+                        continue;
+                    }
+                    
+                    let spr_pixel_bot = ((self.spr_patt_lo_shifter[i] & 0b10000000) != 0) as usize;
+                    let spr_pixel_top = ((self.spr_patt_hi_shifter[i] & 0b10000000) != 0) as usize;
+                    spr_pixel = (spr_pixel_top << 1) | spr_pixel_bot;
+
+                    spr_palette = sprite.palette() + 0x04;
+                    spr_priority = sprite.priority();
+
+                    if spr_pixel != 0 {
+
+                        if i == 0 {
+                            self.spr_0_rendered = true;
+                        }
+
+                        break;
+                    }
+                }
+            }
+
+            // Resolve Background and Sprite/Foreground priority
+            let (pixel, palette) = match (bg_pixel, spr_pixel) {
+                (0, 0) => (0, 0),
+                (0, spr_pixel) => (spr_pixel, spr_palette),
+                (bg_pixel, 0) => (bg_pixel, bg_palette),
+                (bg_pixel, spr_pixel) => {
+                    // check for SPR_0_HIT flag, which occurs only if BG and SPR pixels are both non-zero
+                    if self.contains_spr_0 && self.spr_0_rendered && self.scanline >= 2
+                        && bus.ppu_bus.mask.show_bg() && bus.ppu_bus.mask.show_spr() {
+                        
+                        let spr_0_hit = if !(bus.ppu_bus.mask.show_bg_left() || bus.ppu_bus.mask.show_spr_left()) {
+                            matches!(self.cycles, 9..=257)
+                        } else {
+                            matches!(self.cycles, 1..=257)
+                        };
+
+                        if spr_0_hit {
+                            bus.ppu_bus.status.set(PpuStatus::SPR_0_HIT, spr_0_hit);
+                        }
+                    }
+
+                    if spr_priority {
+                        (spr_pixel, spr_palette)
+                    } else {
+                        (bg_pixel, bg_palette)
+                    }
+                }
+            };
+            
+            let colour = Ppu2C03::get_colour_from_palette(bus, palette, pixel);
+            self.frame[(self.scanline as usize) * DISPLAY_WIDTH + self.cycles as usize - 1] = colour;
         }
 
 
@@ -432,7 +432,7 @@ impl Ppu2C03 {
         if Ppu2C03::rendering_enabled(&mut bus.ppu_bus) {
 
             if self.cycles == 260 && self.scanline < S_POST_RENDER {
-                bus.cartridge.mapper.notify_scanline();
+                bus.cartridge.notify_scanline();
             }
 
             if self.odd_frame && self.cycles == C_HBLANK_END && self.scanline == S_PRE_RENDER {
@@ -449,13 +449,23 @@ impl Ppu2C03 {
 
                 self.scanline = -1;
 
-                self.screen.draw_frame();
+                self.frame_complete = true;
 
                 self.odd_frame = !self.odd_frame;
             }
         }
     }
 
+    pub fn try_get_frame(&mut self) -> Option<[Colour; DISPLAY_WIDTH * DISPLAY_HEIGHT]> {
+        if self.frame_complete {
+            self.frame_complete = false;
+            Some(self.frame)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
     fn rendering_enabled(ppu_bus: &mut PpuBus) -> bool {
         ppu_bus.mask.show_bg() || ppu_bus.mask.show_spr()
     }
@@ -501,6 +511,7 @@ impl Ppu2C03 {
         }
     }
 
+    #[inline]
     pub fn nmi_requested(&mut self) -> bool {
         let ret = self.nmi;
         self.nmi = false;
