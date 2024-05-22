@@ -77,6 +77,7 @@ impl CartridgeNes {
             2  => Box::new(Mapper2::new(prg_rom_banks)),
             3  => Box::new(Mapper3::new(prg_rom_banks)),
             4  => Box::new(Mapper4::new(prg_rom_banks)),
+            7  => Box::new(Mapper7::new()),
             66 => Box::new(Mapper66::new()),
             _ => return Err(format!("Unsupported iNES mapper {}", mapper_num))
         };

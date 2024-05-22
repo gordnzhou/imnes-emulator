@@ -29,7 +29,7 @@ use std::fs::OpenOptions;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-const ROM_PATH: &str = "roms/megaman2.nes";
+const ROM_PATH: &str = "roms/megaman3.nes";
 const SCREEN_SCALE: u32 = 3;
 const SAMPLING_RATE_HZ: u32 = 44100;
 const AUDIO_SAMPLES: usize = 1024;
@@ -120,10 +120,10 @@ fn main() -> Result<(), String> {
 
     let mut total_cycles: u64 = 0;
     let mut joypad_state = 0;
-    let mut cpu = Cpu6502::new();
-    let mut ppu = Ppu2C03::new();
     let apu = Apu2A03::new(SAMPLING_RATE_HZ);
-    let mut bus = SystemBus::new(cartridge, apu);
+    let mut cpu = Cpu6502::new(apu);
+    let mut ppu = Ppu2C03::new();
+    let mut bus = SystemBus::new(cartridge);
 
     bus.reset(); 
     cpu.reset(&mut bus);
@@ -138,13 +138,15 @@ fn main() -> Result<(), String> {
             // CPU clock
             if bus.dma_transferring {
                 bus.dma_clock(total_cycles as u32);
+            } else if bus.dmc_read_stall > 0 {
+                bus.dmc_read_stall -= 1;
             } else {
                 cpu.clock(&mut bus);
             }
 
-            bus.apu.cpu_clock();
+            cpu.apu.cpu_clock(&mut bus);
 
-            match bus.apu.cpu_try_clock_sample() {
+            match cpu.apu.cpu_try_clock_sample() {
                 Some(sample) => {
                     audio_buffer[audio_buffer_size] = sample;
                     audio_buffer_size += 1;
@@ -188,7 +190,7 @@ fn main() -> Result<(), String> {
             None => {}
         }
 
-        if bus.irq_active() {
+        if bus.irq_active() || cpu.apu.irq_active() {
             cpu.irq(&mut bus);
         }
 

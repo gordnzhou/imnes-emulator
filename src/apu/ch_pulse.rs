@@ -8,7 +8,7 @@ pub struct Pulse {
     pub envelope: Envelope,
     pub sweep: Sweep,
 
-    cycles: u32,
+    pub cycles: u32,
     channel: bool,
 }
 

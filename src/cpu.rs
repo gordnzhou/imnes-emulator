@@ -4,11 +4,14 @@ use core::panic;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
 
-use crate::bus::SystemBus;
+use crate::{apu::Apu2A03, bus::SystemBus, SystemControl};
 use self::opcode::{AddrMode, OPCODES_LOOKUP};
 
 const STACK_START: u16 = 0x100;
 const STACK_END: u16 = 0x1FF;
+
+const APU_REG_START: usize = 0x4000;
+const APU_REG_END: usize = 0x4013;
 
 const ILLEGAL_OPCODES_ENABLED: bool = true;
 
@@ -26,6 +29,8 @@ bitflags! {
 }
 
 pub struct Cpu6502 {
+    pub apu: Apu2A03,
+
     accumulator: u8,
     x_index_reg: u8,
     y_index_reg: u8,
@@ -43,8 +48,9 @@ pub struct Cpu6502 {
 }
 
 impl Cpu6502 {
-    pub fn new() -> Self {
+    pub fn new(apu: Apu2A03) -> Self {
         Self {
+            apu,
             accumulator: 0,
             x_index_reg: 0,
             y_index_reg: 0,
@@ -114,6 +120,7 @@ impl Cpu6502 {
         self.operand_addr = 0x0000;
         self.operand_data = 0x00;
         self.page_crossed = false;
+        self.apu.reset();
     }
 
     pub fn irq(&mut self, bus: &mut SystemBus) {
@@ -652,7 +659,8 @@ impl Cpu6502 {
     pub(super) fn anc(&mut self, bus: &mut SystemBus) -> u32 {
         self.and_accumulator(bus);
 
-        self.set_flag(StatusFlag::C, self.read_operand(bus) & 0b10000000 != 0);
+        let val = self.read_operand(bus) & 0b10000000 != 0;
+        self.set_flag(StatusFlag::C, val);
         
         0
     }
@@ -935,7 +943,7 @@ impl Cpu6502 {
     }
 
     #[inline]
-    fn read_operand(&self, bus: &mut SystemBus) -> u8 {
+    fn read_operand(&mut self, bus: &mut SystemBus) -> u8 {
         match self.addr_mode {
             AddrMode::IMP => panic!("Tried to Read Operand despite it being implied"),
             AddrMode::ACC | AddrMode::IMM => self.operand_data,
@@ -1016,12 +1024,29 @@ impl Cpu6502 {
         ret
     }
 
-    fn read_byte(&self, bus: &mut SystemBus, addr: u16) -> u8 {
-        bus.cpu_read(addr as usize)
+    fn read_byte(&mut self, bus: &mut SystemBus, addr: u16) -> u8 {
+        match bus.cpu_read(addr as usize) {
+            Some(byte) => return byte,
+            None => {}
+        };
+
+        let addr = addr as usize;
+        match addr {
+            APU_REG_START..=APU_REG_END | 0x4015  => self.apu.read_register(addr),
+            _ => 0
+        }
     }
 
     fn write_byte(&mut self, bus: &mut SystemBus, addr: u16, byte: u8) {
-        bus.cpu_write(addr as usize, byte);
+        if bus.cpu_write(addr as usize, byte) {
+            return;
+        }
+
+        let addr = addr as usize;
+        match addr {
+            APU_REG_START..=APU_REG_END | 0x4015 | 0x4017 => self.apu.write_register(addr, byte),
+            _ => {}
+        }
     }
 }
 
@@ -1038,7 +1063,9 @@ fn log_to_file(message: &str) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::apu::Apu2A03;
     use crate::{bus::SystemBus, cpu::StatusFlag};
+    use super::opcode::AddrMode;
     use super::{opcode::OPCODES_LOOKUP, Cpu6502};
     use serde_json::Value;
     use std::fs::File;
@@ -1051,6 +1078,28 @@ mod tests {
         let json: Vec<Value> = serde_json::from_reader(reader)?;
     
         Ok(json)
+    }
+
+    impl Cpu6502 {
+        pub fn test_new() -> Self {
+            Self {
+                apu: Apu2A03::test_new(),
+                accumulator: 0,
+                x_index_reg: 0,
+                y_index_reg: 0,
+                program_counter: 0,
+                stack_pointer: 0xFD,
+                processor_status: 0,
+    
+                addr_mode: AddrMode::IMP,
+                operand_addr: 0,
+                operand_data: 0,
+                page_crossed: false,
+    
+                cycles: 0,
+                total_cycles: 0,
+            }
+        }
     }
 
     #[test]
@@ -1069,7 +1118,7 @@ mod tests {
                 
                 let initial_state = data.get("initial").unwrap();
         
-                let mut cpu = Cpu6502::new();
+                let mut cpu = Cpu6502::test_new();
                 cpu.program_counter = initial_state.get("pc").unwrap().as_u64().unwrap() as u16;
                 cpu.stack_pointer = initial_state.get("s").unwrap().as_u64().unwrap() as u8;
                 cpu.accumulator = initial_state.get("a").unwrap().as_u64().unwrap() as u8;
@@ -1134,7 +1183,7 @@ mod tests {
 
     #[test]
     pub fn test_lda() {
-        let mut cpu = Cpu6502::new();
+        let mut cpu = Cpu6502::test_new();
 
         let mut bus = SystemBus::test_new();
         bus.load_ram(&vec![0xA9, 0x11, 0xA5, 0xFE, 0xB5, 0xFC, 0xAD, 0x34, 0x12, 0xBD, 0x34, 0x12, 0xB9, 0x34, 0x12]);
@@ -1197,7 +1246,7 @@ mod tests {
     #[test]
     pub fn test_stack() {
         let mut bus = SystemBus::test_new();
-        let mut cpu = Cpu6502::new();
+        let mut cpu = Cpu6502::test_new();
 
         cpu.push_byte_to_stack(&mut bus, 0x88);
         assert_eq!(cpu.pop_byte_from_stack(&mut bus), 0x88);
@@ -1242,7 +1291,7 @@ mod tests {
 
 
     pub fn do_adc(operand1: u8, operand2: u8, result: u8, overflow: bool, carry: bool) {
-        let mut cpu = Cpu6502::new();
+        let mut cpu = Cpu6502::test_new();
 
         let mut bus = SystemBus::test_new();
         bus.load_ram(&vec![0x69, operand2]);
@@ -1262,7 +1311,7 @@ mod tests {
     }
 
     pub fn do_sbc(operand1: u8, operand2: u8, result: u8, overflow: bool, carry: bool) {
-        let mut cpu = Cpu6502::new();
+        let mut cpu = Cpu6502::test_new();
         
         let mut bus = SystemBus::test_new();
         bus.load_ram(&vec![0xE9, operand2]);

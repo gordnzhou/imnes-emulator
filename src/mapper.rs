@@ -3,6 +3,7 @@ mod mapper1;
 mod mapper2;
 mod mapper3;
 mod mapper4;
+mod mapper7;
 mod mapper66;
 mod testmapper;
 
@@ -14,6 +15,7 @@ pub use self::mapper1::Mapper1;
 pub use self::mapper2::Mapper2;
 pub use self::mapper3::Mapper3;
 pub use self::mapper4::Mapper4;
+pub use self::mapper7::Mapper7;
 pub use self::mapper66::Mapper66;
 
 #[cfg(test)]
