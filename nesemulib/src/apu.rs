@@ -52,10 +52,10 @@ pub struct Apu2A03 {
 
 impl SystemControl for Apu2A03 {
     fn reset(&mut self) {
-        self.pulse1.length_counter.enabled_flag = false;
-        self.pulse2.length_counter.enabled_flag = false;
-        self.triangle.length_counter.enabled_flag = false;
-        self.noise.length_counter.enabled_flag = false;
+        self.pulse1.length_counter.set_enabled_flag(false);
+        self.pulse2.length_counter.set_enabled_flag(false);
+        self.triangle.length_counter.set_enabled_flag(false);
+        self.noise.length_counter.set_enabled_flag(false);
     }
 }
 
@@ -105,6 +105,8 @@ impl Apu2A03 {
         let tnd_out = TND_TABLE[(3 * self.triangle_sample + (self.noise_sample << 1) + self.dmc_sample) as usize];
 
         Some(pulse_out + tnd_out)
+
+        // Some(self.triangle_sample as f32 / 15.0)
     }
 
 
@@ -284,10 +286,10 @@ impl Apu2A03 {
                 self.dmc.set_sample_length(byte);
             },
             0x4015 => { // Status
-                self.pulse1.length_counter.enabled_flag   = (byte & 0b00000001) != 0;
-                self.pulse2.length_counter.enabled_flag   = (byte & 0b00000010) != 0;
-                self.triangle.length_counter.enabled_flag = (byte & 0b00000100) != 0;
-                self.noise.length_counter.enabled_flag    = (byte & 0b00001000) != 0;
+                self.pulse1.length_counter.set_enabled_flag((byte & 0b00000001) != 0);
+                self.pulse2.length_counter.set_enabled_flag((byte & 0b00000010) != 0);
+                self.triangle.length_counter.set_enabled_flag((byte & 0b00000100) != 0);
+                self.noise.length_counter.set_enabled_flag((byte & 0b00001000) != 0);
                 self.dmc.write_status((byte & 0b00010000) != 0);
             },
             0x4017 => { // Frame Counter

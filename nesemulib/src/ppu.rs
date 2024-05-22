@@ -7,7 +7,7 @@ pub use ppubus::PpuBus;
 use crate::bus::SystemBus;
 use crate::{SystemControl, DISPLAY_HEIGHT, DISPLAY_WIDTH};
 
-use self::ppubus::{ATTR_TABLE_START, NAME_TABLE_START, OAM_SIZE, PALETTE_TABLE_START};
+use self::ppubus::{OAMEntry, ATTR_TABLE_START, NAME_TABLE_START, OAM_SIZE, PALETTE_TABLE_START};
 use self::registers::PpuStatus;
 use self::palette::{Colour, DISPLAY_PALETTE};
 
@@ -38,44 +38,6 @@ const S_VBLANK_END: i32 = 260;
 
 /// Final cycle of each scanline
 const C_HBLANK_END: u32 = 340;
-
-
-#[derive(Clone, Copy)]
-struct OAMEntry {
-    pub y: usize,
-    pub id: usize,
-    attributes: usize,
-    pub x: usize,
-}
-
-impl OAMEntry {
-    pub fn y_flipped(&self) -> bool {
-        self.attributes & 0x80 != 0
-    }
-
-    pub fn x_flipped(&self) -> bool {
-        self.attributes & 0x40 != 0
-    }
-
-    pub fn priority(&self) -> bool {
-        self.attributes & 0x20 == 0
-    }
-
-    pub fn palette(&self) -> usize {
-        self.attributes & 0x03
-    }
-}
-
-impl Default for OAMEntry {
-    fn default() -> Self {
-        Self { 
-            y: 0xFF, 
-            id: 0xFF,
-            attributes: 0xFF,
-            x: 0xFF
-        }
-    }
-}
 
 pub struct Ppu2C03 {
     frame: [Colour; DISPLAY_HEIGHT * DISPLAY_WIDTH],
@@ -275,12 +237,7 @@ impl Ppu2C03 {
                                         self.contains_spr_0 = true;
                                     }
 
-                                    self.sprite_cache[self.sprite_cache_count] = OAMEntry {
-                                        y: ppu_bus.read_oam(oam_pos + 0) as usize,
-                                        id: ppu_bus.read_oam(oam_pos + 1) as usize,
-                                        attributes: ppu_bus.read_oam(oam_pos + 2) as usize,
-                                        x: ppu_bus.read_oam(oam_pos + 3) as usize,
-                                    };
+                                    self.sprite_cache[self.sprite_cache_count] = ppu_bus.read_oam_entry(oam_pos);
                                     self.sprite_cache_count += 1;
                                 } else {
                                     ppu_bus.status.set(PpuStatus::SPR_OVERFLOW, true);

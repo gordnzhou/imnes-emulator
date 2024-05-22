@@ -16,6 +16,43 @@ const PALETTE_TABLE_SIZE: usize = 0x20;
 const NAME_TABLE_SIZE: usize = 0x400;
 pub const OAM_SIZE: usize = 0x100;
 
+#[derive(Clone, Copy)]
+pub struct OAMEntry {
+    pub y: usize,
+    pub id: usize,
+    attributes: usize,
+    pub x: usize,
+}
+
+impl Default for OAMEntry {
+    fn default() -> Self {
+        Self { 
+            y: 0xFF, 
+            id: 0xFF,
+            attributes: 0xFF,
+            x: 0xFF
+        }
+    }
+}
+
+impl OAMEntry {
+    pub fn y_flipped(&self) -> bool {
+        self.attributes & 0x80 != 0
+    }
+
+    pub fn x_flipped(&self) -> bool {
+        self.attributes & 0x40 != 0
+    }
+
+    pub fn priority(&self) -> bool {
+        self.attributes & 0x20 == 0
+    }
+
+    pub fn palette(&self) -> usize {
+        self.attributes & 0x03
+    }
+}
+
 pub struct PpuBus {
     name_table: [[u8; NAME_TABLE_SIZE]; 2],
     palette_table: [u8; PALETTE_TABLE_SIZE],
@@ -25,7 +62,6 @@ pub struct PpuBus {
     pub mask: PpuMask,
     pub status: PpuStatus,
     pub oam_addr_reg: u8,
-    pub oam_data_reg: u8,
 
     // Loopy Registers
     pub vram_addr: LoopyPpuReg,
@@ -42,7 +78,6 @@ impl SystemControl for PpuBus {
         self.mask = PpuMask::from_bits_truncate(0);
         self.status = PpuStatus::from_bits_truncate(0);
         self.oam_addr_reg = 0;
-        self.oam_data_reg = 0;
 
         self.vram_addr = LoopyPpuReg::default();
         self.tram_addr = LoopyPpuReg::default();
@@ -64,7 +99,6 @@ impl PpuBus {
             mask: PpuMask::from_bits_truncate(0),
             status: PpuStatus::from_bits_truncate(0),
             oam_addr_reg: 0,
-            oam_data_reg: 0,
 
             vram_addr: LoopyPpuReg::default(),
             tram_addr: LoopyPpuReg::default(),
@@ -79,8 +113,17 @@ impl PpuBus {
         self.oam[addr]
     }
 
-    pub fn write_oam(&mut self, addr: usize, byte: u8) {
-        self.oam[addr] = byte;
+    pub fn read_oam_entry(&self, oam_pos: usize) -> OAMEntry {
+        OAMEntry {
+            y:          self.oam[oam_pos + 0] as usize,
+            id:         self.oam[oam_pos + 1] as usize,
+            attributes: self.oam[oam_pos + 2] as usize,
+            x:          self.oam[oam_pos + 3] as usize,
+        }
+    }
+
+    pub fn transfer_to_oam(&mut self, addr: usize, byte: u8) {
+        self.oam[((self.oam_addr_reg as usize) + addr) & 0xFF] = byte;
     }
 
     // CPU can only access the PPU memory map through the PPU registers
@@ -97,16 +140,19 @@ impl PpuBus {
                 ret
             },
             0x0003 => 0,
-            0x0004 => self.oam_data_reg,
+            0x0004 => {
+                self.oam[self.oam_addr_reg as usize]
+            },
             0x0005 => 0,
             0x0006 => 0,
             0x0007 => {
                 let mut ret = self.ppu_data_buffer;
 
-                self.ppu_data_buffer = self.ppu_read(self.vram_addr.0 as usize, cartridge);
-
-                if self.vram_addr.0 as usize >= PALETTE_TABLE_START {
+                if (self.vram_addr.0 as usize & 0x3FFF) >= PALETTE_TABLE_START {
+                    self.ppu_data_buffer = self.ppu_read((self.vram_addr.0 - 0x1000) as usize, cartridge);
                     ret = self.ppu_data_buffer;
+                } else {
+                    self.ppu_data_buffer = self.ppu_read(self.vram_addr.0 as usize, cartridge);
                 }
 
                 self.vram_addr.0 += self.ctrl.vram_addr_inc();
@@ -135,7 +181,8 @@ impl PpuBus {
                 self.oam_addr_reg = byte;
             },
             0x0004 => {
-                self.oam[self.oam_addr_reg as usize] = byte
+                self.oam[self.oam_addr_reg as usize] = byte;
+                self.oam_addr_reg = self.oam_addr_reg.wrapping_add(1);
             },
             0x0005 => {
                 if !self.ppu_addr_latch {
@@ -248,7 +295,7 @@ impl PpuBus {
                 }
             },
             PALETTE_TABLE_START..=PALETTE_TABLE_END => {
-                addr &= 0x1F;
+                addr &= 0x001F;
 
                 if addr == 0x10 || addr == 0x14 || addr == 0x18 || addr == 0x1C {
                     addr -= 0x10;

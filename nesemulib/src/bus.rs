@@ -131,7 +131,7 @@ impl SystemBus {
                 let data_addr = (self.dma_page as usize) << 8 | (self.dma_addr as usize);
                 self.dma_data = self.cpu_read(data_addr).unwrap_or_default();
             } else {
-                self.ppu_bus.write_oam(self.dma_addr as usize, self.dma_data);
+                self.ppu_bus.transfer_to_oam(self.dma_addr as usize, self.dma_data);
                 self.dma_addr = self.dma_addr.wrapping_add(1);
 
                 if self.dma_addr == 0x00 {

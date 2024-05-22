@@ -1,38 +1,20 @@
 extern crate sdl2;
+extern crate nesemulib;
 
-#[macro_use]
-extern crate lazy_static;
-
-#[macro_use]
-extern crate bitflags;
-
-mod cpu;
-mod bus;
-mod cartridge;
-mod ppu;
-mod mapper;
-mod apu;
-
-use apu::Apu2A03;
-use bus::SystemBus;
-use cartridge::CartridgeNes;
-use cpu::Cpu6502;
-use ppu::Ppu2C03;
+use nesemulib::*;
 use sdl2::audio::{AudioCallback, AudioSpecDesired};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::EventPump;
 
-use std::io::Write;
-use std::fs::OpenOptions;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-const ROM_PATH: &str = "roms/megaman3.nes";
+const ROM_PATH: &str = "roms/smb.nes";
 const SCREEN_SCALE: u32 = 3;
 const SAMPLING_RATE_HZ: u32 = 44100;
-const AUDIO_SAMPLES: usize = 1024;
+const AUDIO_SAMPLES: usize = 512;
 
 // (LSB) Right, Left, Down, Up, Start, Select, A, B (MSB)
 const KEYMAPPINGS: [Keycode; 8] = [
@@ -46,28 +28,7 @@ const KEYMAPPINGS: [Keycode; 8] = [
     Keycode::L,
 ];
 
-fn clear_log_file() -> std::io::Result<()> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open("logs/log.txt")?;
-
-    write!(file, "")
-}
-
-// LIB.RS INTERFACE START
-pub const DISPLAY_WIDTH: usize = 256;
-pub const DISPLAY_HEIGHT: usize = 240;
-
-pub trait SystemControl {
-    fn reset(&mut self);
-}
-
-// LIB.RS INTERFACE END
-
 fn main() -> Result<(), String> {
-    clear_log_file().unwrap();
-
     let sdl_context = sdl2::init()?;
 
     // SDL video
@@ -85,6 +46,18 @@ fn main() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
+    let creator = canvas.texture_creator();
+    let mut texture = creator
+        .create_texture_streaming(PixelFormatEnum::ARGB8888, DISPLAY_WIDTH as u32, DISPLAY_HEIGHT as u32)
+        .map_err(|e| e.to_string())
+        .unwrap();
+
+    let mut frame = [0; DISPLAY_HEIGHT * DISPLAY_WIDTH * 4];
+    for i in 0..(DISPLAY_WIDTH * DISPLAY_HEIGHT) {
+        frame[4 * i + 3] = 0xFF;
+    }
+
+
     // SDL Audio
     let mut audio_buffer = [0.0; AUDIO_SAMPLES];
     let mut audio_buffer_size = 0;
@@ -100,19 +73,11 @@ fn main() -> Result<(), String> {
         }).unwrap();
         _audio_device.resume();
 
-    let creator = canvas.texture_creator();
-    let mut texture = creator
-        .create_texture_streaming(PixelFormatEnum::ARGB8888, DISPLAY_WIDTH as u32, DISPLAY_HEIGHT as u32)
-        .map_err(|e| e.to_string())
-        .unwrap();
-
-    let mut frame = [0; DISPLAY_HEIGHT * DISPLAY_WIDTH * 4];
-    for i in 0..(DISPLAY_WIDTH * DISPLAY_HEIGHT) {
-        frame[4 * i + 3] = 0xFF;
-    }
-
+    // SDL user input
     let mut event_pump = sdl_context.event_pump()?;
 
+
+    
     let cartridge = match CartridgeNes::from_ines_file(ROM_PATH) {
         Ok(cartridge) => cartridge,
         Err(e) => panic!("Unable to load cartridge: {}", e)

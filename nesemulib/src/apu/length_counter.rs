@@ -6,7 +6,7 @@ const LENGTH_LOOKUP: [u8; 0x20] = [
 
 pub struct LengthCounter {
     pub halted: bool,
-    pub enabled_flag: bool,
+    enabled_flag: bool,
     pub counter: u8,
 }
 
@@ -32,6 +32,13 @@ impl LengthCounter {
     pub fn load_counter(&mut self, lookup: u8) {
         if self.enabled_flag {
             self.counter = LENGTH_LOOKUP[lookup as usize];
+        }
+    }
+
+    pub fn set_enabled_flag(&mut self, enabled: bool) {
+        self.enabled_flag = enabled;
+        if !self.enabled_flag {
+            self.counter = 0;
         }
     }
 

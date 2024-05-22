@@ -36,11 +36,10 @@ impl Envelope {
             if self.counter == 0 {
                 self.counter = self.counter_period;
 
-                if self.decay_counter == 0 {
-                    self.loop_flag = true;
-                    self.decay_counter = 15;
-                } else {
+                if self.decay_counter > 0 {
                     self.decay_counter -= 1;
+                } else if self.loop_flag {
+                    self.decay_counter = 15;
                 }
             } else {
                 self.counter -= 1;
