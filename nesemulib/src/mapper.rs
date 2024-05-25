@@ -22,6 +22,10 @@ pub use self::mapper66::Mapper66;
 pub use self::testmapper::TestMapper;
 
 
+const SAVE_RAM_START: usize = 0x6000;
+const SAVE_RAM_END: usize = 0x7FFF;
+const SAVE_RAM_SIZE: usize = 0x2000;
+
 const PRG_ROM_START: usize = 0x8000;
 const PRG_ROM_END: usize = 0xFFFF;
 
@@ -62,4 +66,9 @@ pub trait Mapper: SystemControl {
 
     /// Returns true if the mapper is sending an IRQ interrupt to the 6502
     fn irq_active(&mut self) -> bool { false }
+
+
+    fn get_save_ram(&self) -> Option<[u8; SAVE_RAM_SIZE]> { None }
+
+    fn load_save_ram(&mut self, _save_ram: [u8; SAVE_RAM_SIZE]) -> bool { false }
 }

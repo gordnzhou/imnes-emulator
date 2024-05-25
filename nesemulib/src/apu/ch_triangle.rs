@@ -23,7 +23,7 @@ impl Triangle {
 
     pub fn clock(&mut self) -> u8 {
         
-        if self.length_counter.counter > 0 && self.linear_counter.counter > 0 {
+        if self.length_counter.counter > 0 && self.linear_counter.counter > 0 && self.period > 0 {
     
             if self.cycles == 0 {
                 self.cycles = self.period;

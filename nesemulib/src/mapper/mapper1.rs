@@ -1,11 +1,6 @@
 use crate::{cartridge::{Mirroring, CHR_ROM_SIZE, PRG_ROM_SIZE}, SystemControl};
 
-use super::{Mapper, CHR_ROM_HI_END, CHR_ROM_HI_START, CHR_ROM_LO_END, CHR_ROM_LO_START, PRG_ROM_END, PRG_ROM_HI_END, PRG_ROM_HI_START, PRG_ROM_LO_END, PRG_ROM_LO_START, PRG_ROM_START};
-
-const SAVE_RAM_START: usize = 0x6000;
-const SAVE_RAM_END: usize = 0x7FFF;
-
-const SAVE_RAM_SIZE: usize = 0x2000;
+use super::{Mapper, CHR_ROM_HI_END, CHR_ROM_HI_START, CHR_ROM_LO_END, CHR_ROM_LO_START, PRG_ROM_END, PRG_ROM_HI_END, PRG_ROM_HI_START, PRG_ROM_LO_END, PRG_ROM_LO_START, PRG_ROM_START, SAVE_RAM_END, SAVE_RAM_SIZE, SAVE_RAM_START};
 
 pub struct Mapper1 {
     save_ram: [u8; SAVE_RAM_SIZE],
@@ -160,6 +155,15 @@ impl Mapper for Mapper1 {
 
     fn get_updated_mirroring(&self) -> Option<Mirroring> {
         Some(self.mirroring)
+    }
+
+    fn get_save_ram(&self) -> Option<[u8; SAVE_RAM_SIZE]> {
+        Some(self.save_ram)
+    }
+
+    fn load_save_ram(&mut self, save_ram: [u8; SAVE_RAM_SIZE]) -> bool {
+        self.save_ram = save_ram;
+        true
     }
 }
 

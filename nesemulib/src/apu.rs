@@ -16,10 +16,7 @@ use self::ch_pulse::Pulse;
 use self::lookup::{PULSE_TABLE, TND_TABLE};
 
 use crate::bus::SystemBus;
-use crate::SystemControl;
-
-// Based on a NTSC system
-const TIME_PER_6502_CLOCK: f32 = 1e9 / 1_789_773.0;
+use crate::{SystemControl, BASE_CPU_FREQUENCY, DEFAULT_TIME_PER_6502_CLOCK};
 
 const DUTY_SEQUENCES: [u8; 4] = [
     0b01000000,
@@ -30,6 +27,7 @@ const DUTY_SEQUENCES: [u8; 4] = [
 
 
 pub struct Apu2A03 {
+    time_per_6502_clock: f32,
     time_per_sample: f32,
     time_since_last_sample: f32,
 
@@ -62,6 +60,7 @@ impl SystemControl for Apu2A03 {
 impl Apu2A03 {
     pub fn new(sample_rate: u32) -> Self {
         Self {
+            time_per_6502_clock: DEFAULT_TIME_PER_6502_CLOCK,
             time_per_sample: 1e9 / (sample_rate as f32),
             time_since_last_sample: 0.0,
 
@@ -83,6 +82,17 @@ impl Apu2A03 {
         }
     } 
 
+    /// Multiples the base CPU clock frequency used for the sample output rate.
+    /// If emulation is syncing to audio this effectively changes the emulation speed.
+    pub fn adjust_cpu_clock_rate(&mut self, speed: f32) {
+        assert!(0.0 < speed && speed <= 2.0, "speed is too big/small !!");  
+        self.time_per_6502_clock = 1e9 / (speed * BASE_CPU_FREQUENCY);
+    }
+
+    pub fn get_cpu_clock_rate(&mut self) -> f32 {
+        self.time_per_6502_clock
+    }
+
     pub fn irq_active(&mut self) -> bool {
         let ret = self.interrupt_flag || self.dmc.irq_flag;
         self.dmc.irq_flag = false;
@@ -93,7 +103,7 @@ impl Apu2A03 {
     /// ASSUMING this function is called ONCE PER CPU CYCLE, outputs a sample
     /// matching the APU's sample_rate (based on the NES's CPU frequency)
     pub fn cpu_try_clock_sample(&mut self) -> Option<f32> {
-        self.time_since_last_sample += TIME_PER_6502_CLOCK;
+        self.time_since_last_sample += self.time_per_6502_clock;
 
         if self.time_since_last_sample < self.time_per_sample {
             return None;
@@ -309,6 +319,7 @@ impl Apu2A03 {
 impl Apu2A03 {
     pub fn test_new() -> Self {
         Apu2A03 {
+            time_per_6502_clock: DEFAULT_TIME_PER_6502_CLOCK,
             time_per_sample: 10000.0, 
             time_since_last_sample: 0.0,
 

@@ -150,6 +150,26 @@ impl CartridgeNes {
     pub fn irq_active(&mut self) -> bool {
         self.mapper.irq_active()
     }
+
+    pub fn get_save_ram(&self) -> Option<Vec<u8>> {
+        match self.mapper.get_save_ram() {
+            Some(s) => Some(s.to_vec()),
+            None => None
+        }
+    }
+
+    pub fn load_save_ram(&mut self, save_ram: Vec<u8>) -> Result<(), String> {
+        match save_ram.try_into() {
+            Ok(s) => {
+                if self.mapper.load_save_ram(s) {
+                    Ok(())
+                } else {
+                    Err(String::from("Mapper does not have any save ram"))
+                }   
+            },
+            Err(_) => Err(String::from("Save size does not match")),
+        }
+    }
 }
 
 #[cfg(test)]
