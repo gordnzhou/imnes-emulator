@@ -44,6 +44,18 @@ pub struct Apu2A03 {
     noise_sample: u8,
     dmc_sample: u8,
 
+    // for GUI
+    pub pulse1_enabled: bool,
+    pub pulse2_enabled: bool,
+    pub triangle_enabled: bool,
+    pub noise_enabled: bool,
+    pub dmc_enabled: bool,
+    pub pulse1_samples: Vec<f32>,
+    pub pulse2_samples: Vec<f32>,
+    pub triangle_samples: Vec<f32>,
+    pub noise_samples: Vec<f32>,
+    pub dmc_samples: Vec<f32>,
+
     total_cycles: u32,
     interrupt_flag: bool,
 }
@@ -54,6 +66,15 @@ impl SystemControl for Apu2A03 {
         self.pulse2.length_counter.set_enabled_flag(false);
         self.triangle.length_counter.set_enabled_flag(false);
         self.noise.length_counter.set_enabled_flag(false);
+
+        self.frame_sequencer.reset();
+        self.pulse1.reset();
+        self.pulse2.reset();
+        self.triangle.reset();
+        self.noise.reset();
+        self.dmc.reset();
+        self.total_cycles = 0;
+        self.interrupt_flag = false;
     }
 }
 
@@ -76,6 +97,17 @@ impl Apu2A03 {
             triangle_sample: 0,
             noise_sample: 0,
             dmc_sample: 0,
+
+            pulse1_enabled: true,
+            pulse2_enabled: true,
+            triangle_enabled: true,
+            noise_enabled: true,
+            dmc_enabled: true,
+            pulse1_samples: Vec::new(),
+            pulse2_samples: Vec::new(),
+            triangle_samples: Vec::new(),
+            noise_samples: Vec::new(),
+            dmc_samples: Vec::new(),
 
             total_cycles: 0,
             interrupt_flag: false,
@@ -111,12 +143,16 @@ impl Apu2A03 {
 
         self.time_since_last_sample -= self.time_per_sample;
 
+        self.pulse1_samples.push(self.pulse1_sample as f32);
+        self.pulse2_samples.push(self.pulse2_sample as f32);
+        self.triangle_samples.push(self.triangle_sample as f32);
+        self.noise_samples.push(self.noise_sample as f32);
+        self.dmc_samples.push(self.dmc_sample as f32);
+
         let pulse_out = PULSE_TABLE[(self.pulse1_sample + self.pulse2_sample) as usize];
         let tnd_out = TND_TABLE[(3 * self.triangle_sample + (self.noise_sample << 1) + self.dmc_sample) as usize];
 
         Some(pulse_out + tnd_out)
-
-        // Some(self.triangle_sample as f32 / 15.0)
     }
 
 
@@ -149,13 +185,13 @@ impl Apu2A03 {
 
         self.total_cycles += 1;
 
-        self.triangle_sample = self.triangle.clock();
+        self.triangle_sample = if self.triangle_enabled { self.triangle.clock() } else { 0 };
 
         if self.total_cycles % 2 == 0 {
-            self.pulse1_sample = self.pulse1.clock();
-            self.pulse2_sample = self.pulse2.clock();
-            self.noise_sample = self.noise.clock();
-            self.dmc_sample = self.dmc.clock(bus);
+            self.pulse1_sample = if self.pulse1_enabled { self.pulse1.clock() } else { 0 };
+            self.pulse2_sample = if self.pulse2_enabled { self.pulse2.clock() } else { 0 };
+            self.noise_sample = if self.noise_enabled { self.noise.clock() } else { 0 };
+            self.dmc_sample = if self.dmc_enabled { self.dmc.clock(bus) } else { 0 };
         }
     } 
 
@@ -335,6 +371,17 @@ impl Apu2A03 {
             triangle_sample: 0,
             noise_sample: 0,
             dmc_sample: 0,
+
+            pulse1_enabled: true,
+            pulse2_enabled: true,
+            triangle_enabled: true,
+            noise_enabled: true,
+            dmc_enabled: true,
+            pulse1_samples: Vec::new(),
+            pulse2_samples: Vec::new(),
+            triangle_samples: Vec::new(),
+            noise_samples: Vec::new(),
+            dmc_samples: Vec::new(),
 
             total_cycles: 0,
             interrupt_flag: false,

@@ -1,3 +1,5 @@
+use crate::SystemControl;
+
 pub struct Envelope {
     pub start_flag: bool,
     pub loop_flag: bool,
@@ -8,6 +10,18 @@ pub struct Envelope {
     counter_period: u8,
 
     decay_counter: u8,
+}
+
+impl SystemControl for Envelope {
+    fn reset(&mut self) {
+        self.constant_volume = 0;
+        self.start_flag = false;
+        self.loop_flag = false;
+        self.constant_flag = false;
+        self.counter = 0;
+        self.counter_period = 0;
+        self.decay_counter = 0;
+    }
 }
 
 impl Envelope {

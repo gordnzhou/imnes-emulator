@@ -11,7 +11,7 @@ use sdl2::EventPump;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-const ROM_PATH: &str = "roms/ss.nes";
+const ROM_PATH: &str = "roms/smb3.nes";
 const SCREEN_SCALE: u32 = 3;
 const SAMPLING_RATE_HZ: u32 = 44100;
 const AUDIO_SAMPLES: usize = 512;

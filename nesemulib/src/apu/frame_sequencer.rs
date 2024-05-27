@@ -1,9 +1,20 @@
+use crate::SystemControl;
+
 pub struct FrameSequencer {
     pub mode: bool,
     pub irq_inhibit_flag: bool,
 
     cycles: u32,
     skipped_cycle: bool,
+}
+
+impl SystemControl for FrameSequencer {
+    fn reset(&mut self) {
+        self.cycles = 0;
+        self.mode = false;
+        self.skipped_cycle = false;
+        self.irq_inhibit_flag = false;
+    }
 }
 
 impl FrameSequencer {

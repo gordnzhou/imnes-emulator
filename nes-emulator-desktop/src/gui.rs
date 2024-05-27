@@ -1,14 +1,9 @@
-use std::{io, num::NonZeroU32, rc::Rc};
+use std::{borrow::Cow, fs, num::NonZeroU32};
 
-use glium::{texture::RawImage2d, uniforms::{MagnifySamplerFilter, MinifySamplerFilter, SamplerBehavior}, Surface, Texture2d};
+use glium::Surface;
 use glutin::{
-    config::ConfigTemplateBuilder,
-    context::{ContextAttributesBuilder, NotCurrentGlContext},
-    display::{GetGlDisplay, GlDisplay},
-    surface::{SurfaceAttributesBuilder, WindowSurface},
+    config::ConfigTemplateBuilder, context::{ContextAttributesBuilder, NotCurrentGlContext}, display::{GetGlDisplay, GlDisplay}, surface::{SurfaceAttributesBuilder, WindowSurface}
 };
-use imgui::Image;
-use imgui_glium_renderer::Texture;
 use imgui_winit_support::winit::{
     dpi::LogicalSize, 
     event_loop::EventLoop, 
@@ -20,47 +15,45 @@ use winit::{
     window::Window
 };
 
-use nesemulib::{DISPLAY_HEIGHT, DISPLAY_WIDTH};
-use crate::emulator::Emulator;
+use crate::emulator::{Emulator, Screen};
 
 pub struct App {
-    emulator: Option<Emulator>,
+    width: u32,
+    height: u32,
 }
 
-impl App {
-    pub fn new() -> Result<Self, io::Error> { 
-        let emulator = Emulator::new()?;
+const ROMS_FOLDER: &str = "roms/";
 
-        Ok(Self {
-            emulator: Some(emulator),
-        })
+impl App {
+    pub fn new(width: u32, height: u32) -> Self { 
+        Self {
+            width,
+            height,
+        }
     }
 
     pub fn run_app(&mut self, title: &str) {
-        let (event_loop, window, display) = App::create_window(title);
+        let (event_loop, window, mut display) = self.create_window(title);
         let (mut winit_platform, mut imgui_context) = App::imgui_init(&window);
 
-        // Create renderer from this crate
         let mut renderer = imgui_glium_renderer::Renderer::init(&mut imgui_context, &display)
             .expect("Failed to initialize renderer");
 
-        // Timer for FPS calculation
+        let screen = Screen::new(&mut renderer, &mut display);
+
+        let mut emulator = Emulator::new(screen);
+        emulator.reset();
+
         let mut last_frame = std::time::Instant::now();
         let mut last_emulation = std::time::Instant::now();
 
-        let mut paused = false;
-
-        let width = DISPLAY_WIDTH as u32;
-        let height = DISPLAY_HEIGHT as u32;
-        let image = RawImage2d::from_raw_rgba([0; 4 * DISPLAY_WIDTH * DISPLAY_HEIGHT].to_vec(), 
-            (width, height));
-        let texture = Rc::new(Texture2d::new(&display, image).unwrap());
-        let texture_id = renderer.textures().insert(Texture { texture: Rc::clone(&texture), sampler: SamplerBehavior::default() });
-        let sampler = SamplerBehavior {
-            magnify_filter: MagnifySamplerFilter::Nearest,
-            minify_filter: MinifySamplerFilter::Nearest,
-            ..Default::default()
-        };
+        let mut selected_file = 0;
+        let mut file_names: Vec<String> = fs::read_dir(ROMS_FOLDER).unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().unwrap().is_file())
+            .map(|e| e.file_name().into_string().unwrap())
+            .collect();
+        file_names.sort(); 
         
         event_loop.run(move |event, window_target| {
             match event {
@@ -81,37 +74,29 @@ impl App {
                 } => {
                     let ui = imgui_context.frame();
 
-                    if let Some(emulator) = &mut self.emulator {
-                        if !paused {
-                            let now = std::time::Instant::now();
-                            emulator.run_for_duration(now - last_emulation);
-                            last_emulation = now;
+                    let now = std::time::Instant::now();
+                    emulator.run_for_duration(now - last_emulation);
+                    last_emulation = now;
 
-                            if let Some(frame) = emulator.get_updated_frame() {
-                                let image = RawImage2d::from_raw_rgba(frame.to_vec(), (width, height));
-                                let new_texture = Rc::new(Texture2d::new(&display, image).unwrap());
-                                renderer.textures().replace(texture_id, Texture { texture: new_texture, sampler });
-                            }
-                        }
-                    }
+                    emulator.update_screen(&mut display, &mut renderer, ui);
+                    emulator.show_options(ui);
+                    emulator.show_cpu_state(ui);
+                    emulator.show_ppu_state(ui);
+                    emulator.show_apu_state(ui);
 
-                    // renders the screen
-                    Image::new(texture_id, [3.0 * width as f32, 3.0 * height as f32]).build(&ui);
-
-                    ui.window("Hello world")
-                        .size([300.0, 100.0], imgui::Condition::FirstUseEver)
+                    ui.window("ROMs")
+                        .size([300.0, 200.0], imgui::Condition::FirstUseEver)
+                        .position([20.0, 20.0], imgui::Condition::FirstUseEver)
                         .build(|| {
-                            if ui.button("Pause / Unpause") {
-                                paused = !paused
-                            }
-                            if ui.button("Stop") {
-                                paused = true;
-                                self.emulator = None;
-                            }
-                            if ui.button("Restart") {
-                                if let Ok(emulator) = Emulator::new() {
-                                    self.emulator = Some(emulator);
-                                    paused = false;
+                            ui.combo("Select a ROM file", &mut selected_file, &file_names, |i| {
+                                Cow::Borrowed(i)
+                            });
+
+                            if ui.button("Load Selected File") {
+                                let file_name = format!("{}{}", ROMS_FOLDER, &file_names[selected_file as usize]);
+                                match emulator.load_ines_cartridge(&file_name) {
+                                    Err(e) => println!("Error loading ROM: {}", e),
+                                    _ => {}
                                 }
                             }
                         });
@@ -144,9 +129,7 @@ impl App {
                         ..
                     },
                     ..
-                } => if let Some(emulator) = &mut self.emulator {
-                    emulator.update_joypad(physical_key, state)
-                },
+                } => emulator.update_joypad(physical_key, state),
                 winit::event::Event::WindowEvent {
                     event: winit::event::WindowEvent::Resized(new_size),
                     ..
@@ -163,12 +146,12 @@ impl App {
         }).expect("EventLoop error");
     }
 
-    fn create_window(title: &str) -> (EventLoop<()>, Window, glium::Display<WindowSurface>) {
+    fn create_window(&self, title: &str) -> (EventLoop<()>, Window, glium::Display<WindowSurface>) {
         let event_loop = EventLoop::new().expect("Failed to create EventLoop");
     
         let window_builder = WindowBuilder::new()
             .with_title(title)
-            .with_inner_size(LogicalSize::new(1024, 768));
+            .with_inner_size(LogicalSize::new(self.width, self.height));
     
         let (window, cfg) = glutin_winit::DisplayBuilder::new()
             .with_window_builder(Some(window_builder))
@@ -187,8 +170,8 @@ impl App {
     
         let surface_attribs = SurfaceAttributesBuilder::<WindowSurface>::new().build(
             window.raw_window_handle(),
-            NonZeroU32::new(1024).unwrap(),
-            NonZeroU32::new(768).unwrap(),
+            NonZeroU32::new(self.width).unwrap(),
+            NonZeroU32::new(self.height).unwrap(),
         );
         let surface = unsafe {
             cfg.display()
@@ -211,10 +194,7 @@ impl App {
         imgui_context.set_ini_filename(None);
     
         let mut winit_platform = imgui_winit_support::WinitPlatform::init(&mut imgui_context);
-    
-        let dpi_mode = imgui_winit_support::HiDpiMode::Default;
-    
-        winit_platform.attach_window(imgui_context.io_mut(), window, dpi_mode);
+        winit_platform.attach_window(imgui_context.io_mut(), window, imgui_winit_support::HiDpiMode::Default);
     
         imgui_context
             .fonts()

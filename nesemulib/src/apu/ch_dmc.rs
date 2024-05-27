@@ -1,4 +1,4 @@
-use crate::bus::SystemBus;
+use crate::{bus::SystemBus, SystemControl};
 
 
 
@@ -23,6 +23,25 @@ pub struct Dmc {
 
     period: u32,
     cycles: u32,
+}
+
+impl SystemControl for Dmc {
+    fn reset(&mut self) {
+        self.irq_enabled_flag = false;
+        self.irq_flag = false;
+        self.loop_flag = false;
+        self.sample_address = 0x0000;
+        self.address_counter = 0x0000;
+        self.sample_length = 0x0000;
+        self.bytes_left = 0x0000;
+        self.sample_buffer = None;
+        self.output_shift_reg = 0;
+        self.shift_reg_index = 0;
+        self.silence_flag = false;
+        self.output_level = 0;
+        self.period = PERIOD_LOOKUP[0];
+        self.cycles = 0;
+    }
 }
 
 impl Dmc {

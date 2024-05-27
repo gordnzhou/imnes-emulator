@@ -3,13 +3,12 @@ mod registers;
 mod palette;
 
 pub use ppubus::PpuBus;
+pub use self::{palette::{Colour, DISPLAY_PALETTE}, registers::*};
 
 use crate::bus::SystemBus;
 use crate::{SystemControl, DISPLAY_HEIGHT, DISPLAY_WIDTH};
 
 use self::ppubus::{OAMEntry, ATTR_TABLE_START, NAME_TABLE_START, OAM_SIZE, PALETTE_TABLE_START};
-use self::registers::PpuStatus;
-use self::palette::{Colour, DISPLAY_PALETTE};
 
 const SPRITE_CACHE_SIZE: usize = 8;
 
@@ -417,10 +416,10 @@ impl Ppu2C03 {
         self.frame_complete
     }
 
-    pub fn try_get_frame(&mut self) -> Option<[Colour; DISPLAY_WIDTH * DISPLAY_HEIGHT]> {
+    pub fn try_get_frame(&mut self) -> Option<&[Colour; DISPLAY_WIDTH * DISPLAY_HEIGHT]> {
         if self.frame_complete {
             self.frame_complete = false;
-            Some(self.frame)
+            Some(&self.frame)
         } else {
             None
         }

@@ -1,3 +1,5 @@
+use crate::SystemControl;
+
 use super::{envelope::Envelope, length_counter::LengthCounter, sweep::Sweep, DUTY_SEQUENCES};
 
 pub struct Pulse {
@@ -10,6 +12,17 @@ pub struct Pulse {
 
     pub cycles: u32,
     channel: bool,
+}
+
+impl SystemControl for Pulse {
+    fn reset(&mut self) {
+        self.duty_sequence = DUTY_SEQUENCES[0];
+        self.duty_step = 0;
+        self.length_counter.reset();
+        self.envelope.reset();
+        self.sweep.reset();
+        self.cycles = 0;
+    }
 }
 
 impl Pulse {

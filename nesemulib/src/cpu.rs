@@ -31,12 +31,12 @@ bitflags! {
 pub struct Cpu6502 {
     pub apu: Apu2A03,
 
-    accumulator: u8,
-    x_index_reg: u8,
-    y_index_reg: u8,
-    program_counter: u16,
-    stack_pointer: u8,
-    processor_status: u8,
+    pub accumulator: u8,
+    pub x_index_reg: u8,
+    pub y_index_reg: u8,
+    pub program_counter: u16,
+    pub stack_pointer: u8,
+    pub processor_status: u8,
 
     addr_mode: AddrMode,
     operand_addr: u16,
@@ -44,7 +44,7 @@ pub struct Cpu6502 {
     page_crossed: bool,
 
     cycles: u32,
-    total_cycles: u64,
+    pub total_cycles: u64,
 }
 
 impl Cpu6502 {

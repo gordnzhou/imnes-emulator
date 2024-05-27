@@ -1,3 +1,5 @@
+use crate::SystemControl;
+
 use super::length_counter::LengthCounter;
 
 pub struct Triangle {
@@ -7,6 +9,17 @@ pub struct Triangle {
     pub period: u32,
     cycles: u32,
     duty_step: u8,
+}
+
+impl SystemControl for Triangle {
+    fn reset(&mut self) {
+        self.length_counter.reset();
+        self.linear_counter.reset();
+        self.cycles = 0;
+        self.period = 0;
+        self.duty_step = 0;
+    }
+
 }
 
 impl Triangle {
@@ -50,6 +63,15 @@ pub struct LinearCounter {
     pub control_flag: bool,
     pub reload: u8,
     pub reload_flag: bool,
+}
+
+impl SystemControl for LinearCounter {
+    fn reset(&mut self) {
+        self.counter = 0;
+        self.control_flag = false;
+        self.reload = 0;
+        self.reload_flag = false;
+    }
 }
 
 impl LinearCounter {

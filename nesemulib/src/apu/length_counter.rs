@@ -1,3 +1,5 @@
+use crate::SystemControl;
+
 
 const LENGTH_LOOKUP: [u8; 0x20] = [
     10,254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
@@ -8,6 +10,14 @@ pub struct LengthCounter {
     pub halted: bool,
     enabled_flag: bool,
     pub counter: u8,
+}
+
+impl SystemControl for LengthCounter {
+    fn reset(&mut self) {
+        self.halted = false;
+        self.enabled_flag = false;
+        self.counter = 0;
+    }
 }
 
 impl LengthCounter {

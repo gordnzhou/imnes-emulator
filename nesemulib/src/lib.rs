@@ -15,7 +15,7 @@ pub use apu::Apu2A03;
 pub use bus::SystemBus;
 pub use cartridge::CartridgeNes;
 pub use cpu::Cpu6502;
-pub use ppu::Ppu2C03;
+pub use ppu::*;
 
 pub const DISPLAY_WIDTH: usize = 256;
 pub const DISPLAY_HEIGHT: usize = 240;

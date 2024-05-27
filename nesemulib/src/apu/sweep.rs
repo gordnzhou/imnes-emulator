@@ -1,3 +1,5 @@
+use crate::SystemControl;
+
 pub struct Sweep {
     pub period: u32,
     pub muted: bool,
@@ -10,6 +12,20 @@ pub struct Sweep {
 
     divider: u8,
     counter: u8,
+}
+
+impl SystemControl for Sweep {
+    fn reset(&mut self) {
+        self.period = 0;
+        self.muted = false;
+        self.target_period = 0;
+        self.shift = 0;
+        self.negate_flag = false;
+        self.enabled_flag = false;
+        self.reload_flag = false;
+        self.divider = 0;
+        self.counter = 0;
+    }
 }
 
 impl Sweep {

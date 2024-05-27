@@ -1,8 +1,0 @@
-
-struct Display {
-
-}
-
-impl Display {
-    
-}
