@@ -9,6 +9,8 @@ use nesemulib::{Colour, DISPLAY_HEIGHT, DISPLAY_WIDTH};
 const SCREEN_SCALE: f32 = 2.5;
 const SCREEN_MARGIN: f32 = 20.0;
 
+const FRAME_LENGTH: usize = DISPLAY_WIDTH * DISPLAY_HEIGHT * 4;
+
 pub struct Screen {
     width: u32,
     height: u32,
@@ -26,7 +28,7 @@ impl Screen {
         let width = DISPLAY_WIDTH as u32;
         let height = DISPLAY_HEIGHT as u32;
 
-        let image = RawImage2d::from_raw_rgba([0; 4 * DISPLAY_WIDTH * DISPLAY_HEIGHT].to_vec(), 
+        let image = RawImage2d::from_raw_rgba([0; FRAME_LENGTH].to_vec(), 
             (width, height));
         let sampler = uniforms::SamplerBehavior {
             magnify_filter: uniforms::MagnifySamplerFilter::Nearest,
@@ -50,15 +52,9 @@ impl Screen {
         }
     }
 
-    pub fn reset(&mut self) {
-        self.last_frame_update = Instant::now();
-        self.last_total_frames = 0;
-        self.total_frames = 0;
-    }
-
-    pub fn update(&mut self, colours: Option<&[Colour; DISPLAY_WIDTH * DISPLAY_HEIGHT]>, display: &mut Display<WindowSurface>, renderer: &mut Renderer, ui: &mut Ui) {
+    pub fn draw(&mut self, colours: Option<&[Colour; DISPLAY_WIDTH * DISPLAY_HEIGHT]>, display: &mut Display<WindowSurface>, renderer: &mut Renderer, ui: &Ui, name: &Option<String>) {
         if let Some(colours) = colours {
-            let mut frame = [0xFF; 4 * DISPLAY_WIDTH * DISPLAY_HEIGHT];
+            let mut frame = [0xFF; FRAME_LENGTH];
 
             for i in 0..DISPLAY_WIDTH * DISPLAY_HEIGHT {
                 frame[4 * i + 0] = colours[i].0;
@@ -66,10 +62,7 @@ impl Screen {
                 frame[4 * i + 2] = colours[i].2;
             }
             
-            let image = RawImage2d::from_raw_rgba(frame.to_vec(), (self.width, self.height));
-            let new_texture = Rc::new(Texture2d::new(display, image).unwrap());
-            renderer.textures().replace(self.texture_id, Texture { texture: new_texture, sampler: self.sampler });
-
+            self.update_screen(frame, display, renderer);
             self.total_frames += 1;
         }
 
@@ -80,14 +73,40 @@ impl Screen {
             self.last_frame_update = Instant::now();
         }
 
+        let window_width = SCREEN_MARGIN + SCREEN_SCALE * self.width as f32;
+        let window_height = 2.0 * SCREEN_MARGIN + SCREEN_SCALE * self.height as f32;
+
         ui.window("Screen")
-            .size([SCREEN_MARGIN + SCREEN_SCALE * self.width as f32, 2.0 * SCREEN_MARGIN + SCREEN_SCALE * self.height as f32], imgui::Condition::FirstUseEver)
-            .position([300.0, 100.0], imgui::Condition::Always)
+            .size([window_width, window_height], imgui::Condition::FirstUseEver)
+            .position([300.0, 20.0], imgui::Condition::Always)
             .build(|| {
-                ui.text(format!("FPS: {}", self.fps));
+                let text = if let Some(name) = name {
+                    format!("{} (FPS: {:.3})", name, self.fps)
+                } else {
+                    format!("NO ROM DETECTED")
+                };
+
+                ui.text(text);
                 ui.separator();
                 Image::new(self.texture_id, [SCREEN_SCALE * self.width as f32, SCREEN_SCALE * self.height as f32])
                     .build(&ui);
             });
+    }
+
+    pub fn clear_screen(&mut self, display: &mut Display<WindowSurface>, renderer: &mut Renderer) {
+        self.update_screen([0; FRAME_LENGTH], display, renderer)
+    }
+
+    pub fn reset(&mut self) {
+        self.last_frame_update = Instant::now();
+        self.last_total_frames = 0;
+        self.total_frames = 0;
+    }
+
+    #[inline]
+    fn update_screen(&mut self, frame: [u8; FRAME_LENGTH], display: &mut Display<WindowSurface>, renderer: &mut Renderer) {
+        let image = RawImage2d::from_raw_rgba(frame.to_vec(), (self.width, self.height));
+        let new_texture = Rc::new(Texture2d::new(display, image).unwrap());
+        renderer.textures().replace(self.texture_id, Texture { texture: new_texture, sampler: self.sampler });
     }
 }

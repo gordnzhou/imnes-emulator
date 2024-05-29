@@ -19,8 +19,12 @@ pub enum Mirroring {
 }
 
 pub struct CartridgeNes {
-    mirroring: Mirroring,
-    mapper: Box<dyn Mapper>,
+    pub mirroring: Mirroring,
+    pub mapper_num: u8,
+    pub prg_rom_banks: usize,
+    pub chr_rom_banks: usize,
+    pub battery_backed: bool,
+    pub mapper: Box<dyn Mapper>,
     no_chr_rom: bool,
     prg_rom: Vec<u8>,
     chr_rom: Vec<u8>,
@@ -68,8 +72,8 @@ impl CartridgeNes {
 
         let mapper_num = (data[7] & 0b11110000) | (data[6] >> 4);
 
-        println!("Mapper:{} PRG-ROM banks:{} CHR-ROM banks:{} {:?} Trainer?:{} Battery?:{}", 
-            mapper_num, prg_rom_banks, chr_rom_banks, mirroring, data[6] & 0x04, battery_backed);
+        // println!("Mapper:{} PRG-ROM banks:{} CHR-ROM banks:{} {:?} Trainer?:{} Battery?:{}", 
+        //     mapper_num, prg_rom_banks, chr_rom_banks, mirroring, data[6] & 0x04, battery_backed);
 
         let mapper: Box<dyn Mapper> =  match mapper_num {
             0  => Box::new(Mapper0::new(prg_rom_banks)),
@@ -104,10 +108,14 @@ impl CartridgeNes {
 
         Ok(Self { 
             mirroring,
+            chr_rom_banks,
+            prg_rom_banks,
             prg_rom,
             chr_rom,
             no_chr_rom: chr_rom_banks == 0,
+            mapper_num,
             mapper,
+            battery_backed,
         })
     }
 
@@ -182,9 +190,13 @@ mod tests {
             CartridgeNes {
                 prg_rom: vec![0; 0x10000],
                 chr_rom: vec![0; 0x2000],
+                prg_rom_banks: 0,
+                chr_rom_banks: 0,
                 no_chr_rom: true,
                 mirroring: Mirroring::HORIZONTAL,
-                mapper: Box::new(TestMapper::new())
+                mapper_num: 0,
+                mapper: Box::new(TestMapper::new()),
+                battery_backed: false,
             }
         }
     }

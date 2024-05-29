@@ -9,6 +9,7 @@ pub struct AudioPlayer {
     audio_tx: SyncSender<[f32; AUDIO_SAMPLES]>,
     audio_buffer: [f32; AUDIO_SAMPLES],
     buffer_index: usize,
+    pub master_volume: f32,
 }
 
 impl AudioPlayer {
@@ -50,11 +51,12 @@ impl AudioPlayer {
             audio_tx,
             audio_buffer: [0.0; AUDIO_SAMPLES],
             buffer_index: 0,
+            master_volume: 0.5,
         }
     }
 
     pub fn send_sample(&mut self, sample: f32) {
-        self.audio_buffer[self.buffer_index] = sample;
+        self.audio_buffer[self.buffer_index] = sample * self.master_volume;
         self.buffer_index += 1;
 
         if self.buffer_index == AUDIO_SAMPLES {

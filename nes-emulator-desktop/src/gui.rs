@@ -1,9 +1,13 @@
-use std::{borrow::Cow, fs, num::NonZeroU32};
+use std::num::NonZeroU32;
 
 use glium::Surface;
 use glutin::{
-    config::ConfigTemplateBuilder, context::{ContextAttributesBuilder, NotCurrentGlContext}, display::{GetGlDisplay, GlDisplay}, surface::{SurfaceAttributesBuilder, WindowSurface}
+    config::ConfigTemplateBuilder, 
+    context::{ContextAttributesBuilder, NotCurrentGlContext}, 
+    display::{GetGlDisplay, GlDisplay}, 
+    surface::{SurfaceAttributesBuilder, WindowSurface},
 };
+
 use imgui_winit_support::winit::{
     dpi::LogicalSize, 
     event_loop::EventLoop, 
@@ -15,14 +19,12 @@ use winit::{
     window::Window
 };
 
-use crate::emulator::{Emulator, Screen};
+use crate::{emulator::{Emulator, Screen}, logger::Logger};
 
 pub struct App {
     width: u32,
     height: u32,
 }
-
-const ROMS_FOLDER: &str = "roms/";
 
 impl App {
     pub fn new(width: u32, height: u32) -> Self { 
@@ -41,20 +43,15 @@ impl App {
 
         let screen = Screen::new(&mut renderer, &mut display);
 
+        let mut logger = Logger::new();
+
         let mut emulator = Emulator::new(screen);
         emulator.reset();
-
+        
         let mut last_frame = std::time::Instant::now();
         let mut last_emulation = std::time::Instant::now();
+        let mut last_save = std::time::Instant::now();
 
-        let mut selected_file = 0;
-        let mut file_names: Vec<String> = fs::read_dir(ROMS_FOLDER).unwrap()
-            .filter_map(Result::ok)
-            .filter(|e| e.file_type().unwrap().is_file())
-            .map(|e| e.file_name().into_string().unwrap())
-            .collect();
-        file_names.sort(); 
-        
         event_loop.run(move |event, window_target| {
             match event {
                 Event::NewEvents(_) => {
@@ -78,34 +75,42 @@ impl App {
                     emulator.run_for_duration(now - last_emulation);
                     last_emulation = now;
 
-                    emulator.update_screen(&mut display, &mut renderer, ui);
-                    emulator.show_options(ui);
+                    emulator.draw_screen(&mut display, &mut renderer, ui);
+
+                    emulator.show_options(ui, &mut display, &mut renderer, &mut logger);
                     emulator.show_cpu_state(ui);
                     emulator.show_ppu_state(ui);
                     emulator.show_apu_state(ui);
+                    emulator.show_roms(ui, &mut logger);
 
-                    ui.window("ROMs")
-                        .size([300.0, 200.0], imgui::Condition::FirstUseEver)
-                        .position([20.0, 20.0], imgui::Condition::FirstUseEver)
-                        .build(|| {
-                            ui.combo("Select a ROM file", &mut selected_file, &file_names, |i| {
-                                Cow::Borrowed(i)
-                            });
+                    ui.main_menu_bar(|| {
+                        if ui.menu_item("Settings") {
+                            ui.open_popup("Settings");
+                        }
 
-                            if ui.button("Load Selected File") {
-                                let file_name = format!("{}{}", ROMS_FOLDER, &file_names[selected_file as usize]);
-                                match emulator.load_ines_cartridge(&file_name) {
-                                    Err(e) => println!("Error loading ROM: {}", e),
-                                    _ => {}
-                                }
-                            }
-                        });
+                        if ui.menu_item("Emulation") {
+                            
+                        }
+
+                        emulator.show_settings(ui);
+                    });
+                    
+                    let now = std::time::Instant::now();
+                    if now - last_save >= std::time::Duration::new(60, 0) {
+                        last_save = now;
+                    
+                        if emulator.auto_save {
+                            emulator.write_save_to_file(&mut logger);
+                        }
+                    }
+
+                    logger.display_event_log(ui);
 
                     // Setup for drawing
                     let mut target = display.draw();
 
                     // Renderer doesn't automatically clear window
-                    target.clear_color_srgb(1.0, 1.0, 1.0, 1.0);
+                    target.clear_color_srgb(0.1, 0.1, 0.15, 1.0);
 
                     // Perform rendering
                     winit_platform.prepare_render(ui, &window);
@@ -196,9 +201,12 @@ impl App {
         let mut winit_platform = imgui_winit_support::WinitPlatform::init(&mut imgui_context);
         winit_platform.attach_window(imgui_context.io_mut(), window, imgui_winit_support::HiDpiMode::Default);
     
-        imgui_context
-            .fonts()
-            .add_font(&[imgui::FontSource::DefaultFontData { config: None }]);
+        imgui_context.fonts().add_font(&[imgui::FontSource::DefaultFontData {
+            config: Some(imgui::FontConfig {
+                size_pixels: 14.0,
+                ..Default::default()
+            }),
+        }]);
     
         (winit_platform, imgui_context)
     }
