@@ -19,7 +19,7 @@ use winit::{
     window::Window
 };
 
-use crate::{emulator::{Emulator, Screen}, logger::Logger};
+use crate::{emulator::{Emulator, Screen}, ui::EmulatorUi, logger::Logger};
 
 pub struct App {
     width: u32,
@@ -43,9 +43,12 @@ impl App {
 
         let screen = Screen::new(&mut renderer, &mut display);
 
-        let mut logger = Logger::new();
+        let mut ui_want_text_input = false;
 
+        let mut logger = Logger::new();
+        let mut emulator_ui = EmulatorUi::new();
         let mut emulator = Emulator::new(screen);
+
         emulator.reset();
         
         let mut last_frame = std::time::Instant::now();
@@ -69,7 +72,11 @@ impl App {
                     event: WindowEvent::RedrawRequested,
                     ..
                 } => {
+
                     let ui = imgui_context.frame();
+
+                    ui_want_text_input = ui.io().want_text_input;
+                    println!("{}", ui_want_text_input);
 
                     let now = std::time::Instant::now();
                     emulator.run_for_duration(now - last_emulation);
@@ -77,31 +84,12 @@ impl App {
 
                     emulator.draw_screen(&mut display, &mut renderer, ui);
 
-                    emulator.show_options(ui, &mut display, &mut renderer, &mut logger);
-                    emulator.show_cpu_state(ui);
-                    emulator.show_ppu_state(ui);
-                    emulator.show_apu_state(ui);
-                    emulator.show_roms(ui, &mut logger);
-
-                    ui.main_menu_bar(|| {
-                        if ui.menu_item("Settings") {
-                            ui.open_popup("Settings");
-                        }
-
-                        if ui.menu_item("Emulation") {
-                            
-                        }
-
-                        emulator.show_settings(ui);
-                    });
+                    emulator_ui.render_emulation(&mut emulator, ui, &mut logger, &mut display, &mut renderer);
                     
                     let now = std::time::Instant::now();
                     if now - last_save >= std::time::Duration::new(60, 0) {
                         last_save = now;
-                    
-                        if emulator.auto_save {
-                            emulator.write_save_to_file(&mut logger);
-                        }
+                        emulator.rom_manager.do_auto_save(&mut logger);
                     }
 
                     logger.display_event_log(ui);
@@ -134,7 +122,10 @@ impl App {
                         ..
                     },
                     ..
-                } => emulator.update_joypad(physical_key, state),
+                } if !ui_want_text_input => {
+                    // prevent joypad updates from colliding with text input fields in ui 
+                    emulator.update_joypad(physical_key, state);
+                },
                 winit::event::Event::WindowEvent {
                     event: winit::event::WindowEvent::Resized(new_size),
                     ..

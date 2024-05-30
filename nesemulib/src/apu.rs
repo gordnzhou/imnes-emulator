@@ -121,6 +121,10 @@ impl Apu2A03 {
         self.time_per_6502_clock = 1e9 / (speed * BASE_CPU_FREQUENCY);
     }
 
+    pub fn adjust_sample_rate(&mut self, sample_rate: u32) {
+        self.time_per_sample = 1e9 / (sample_rate as f32);
+    }
+
     pub fn get_cpu_clock_rate(&mut self) -> f32 {
         self.time_per_6502_clock
     }

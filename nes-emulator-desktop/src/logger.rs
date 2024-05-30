@@ -1,6 +1,7 @@
 use chrono::{DateTime, Local};
 use imgui::Ui;
 
+/// Keeps a record of logged events and displays them in Ui
 pub struct Logger {
     event_log: Vec<Event>
 }
