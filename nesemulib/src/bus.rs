@@ -142,8 +142,8 @@ impl SystemBus {
         }
     }
 
-    pub fn ppu_read(&mut self, addr: usize) -> u8 {
-        self.ppu_bus.ppu_read(addr, &mut self.cartridge)
+    pub fn ppu_read(&self, addr: usize) -> u8 {
+        self.ppu_bus.ppu_read(addr, &self.cartridge)
     }
 
     pub fn update_joypad_state(&mut self, joypad_state1: u8, joypad_state2: u8) {

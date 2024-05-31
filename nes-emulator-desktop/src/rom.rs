@@ -91,7 +91,7 @@ impl RomManager {
     pub fn write_save_to_file(&mut self, logger: &mut Logger) {
         let file_name = match &self.cartridge_name {
             Some(name) => name,
-            _ => panic!("Cartridge but no cartridge name")
+            _ => return
         };
 
         let save_path = self.get_save_path(file_name);

@@ -1,9 +1,10 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, rc::Rc};
 
-use imgui::{TabItem, Ui};
-use glium::Display;
+use imgui::{Image, TabItem, TextureId, Ui};
+use glium::{texture::RawImage2d, uniforms, Display, Texture2d};
 use glutin::surface::WindowSurface;
-use imgui_glium_renderer::Renderer;
+use imgui_glium_renderer::{Renderer, Texture};
+use nesemulib::{PATTERN_TABLE_LENGTH, PATTERN_TABLE_W_H};
 
 use crate::{emulator::{Emulator, DEFAULT_SAMPLE_RATE}, logger::Logger};
 
@@ -13,15 +14,21 @@ pub struct EmulatorUi {
     apu_window: bool,
     ppu_window: bool,
 
+    pattern_table_frame: PixelFrame,
+    selected_palette: usize,
+
     new_sample_rate: u32,
 }
 
 impl EmulatorUi {
-    pub fn new() -> Self {
+    pub fn new(renderer: &mut Renderer, display: &mut Display<WindowSurface>) -> Self {     
         Self {
             cpu_window: true,
             apu_window: true,
             ppu_window: true,
+
+            pattern_table_frame: PixelFrame::new(2 * PATTERN_TABLE_W_H as u32, PATTERN_TABLE_W_H as u32, renderer, display),
+            selected_palette: 0,
 
             new_sample_rate: DEFAULT_SAMPLE_RATE,
         }
@@ -31,20 +38,20 @@ impl EmulatorUi {
         
         self.show_options(emulator, ui, display, renderer, logger);
 
-        self.emulation_state_windows(ui, emulator);
+        self.emulation_state_windows(ui, emulator, renderer, display);
 
         self.rom_window(ui, logger, emulator);
 
         self.main_menu(emulator, ui, logger);
     }
 
-    fn emulation_state_windows(&self, ui: &Ui, emulator: &mut Emulator) {
+    fn emulation_state_windows(&mut self, ui: &Ui, emulator: &mut Emulator, renderer: &mut Renderer, display: &mut Display<WindowSurface>) {
         if self.apu_window {
             self.apu_state_window(ui, emulator);
         }
         
         if self.ppu_window {
-            self.ppu_state_window(ui, emulator);
+            self.ppu_state_window(ui, emulator, renderer, display);
         }
         
         if self.cpu_window {
@@ -62,7 +69,7 @@ impl EmulatorUi {
                 {
                     let rm = &mut emulator.rom_manager;
 
-                    ui.text("Select a ROM file");
+                    ui.text(format!("Select a ROM file from: {}", rm.roms_folder));
                     ui.combo("##combo", &mut rm.selected_file, &rm.file_names, |i| {
                         Cow::Borrowed(i)
                     });
@@ -72,17 +79,17 @@ impl EmulatorUi {
                     }
                 }
 
-                ui.separator();
-
                 // Try to load a ROM if a file was chosen and confirmed by button
                 if let Some(file_name) = file_name {
                     match emulator.load_ines_cartridge(&file_name, logger) {
-                        Err(e) => logger.log_error(&format!("Unable to load ROM: {}", e)),
+                        Err(e) => logger.log_error(&format!("Unable to load ROM from {}: {}", file_name, e)),
                         _ => {}
                     }
                 }
 
                 if let Some(bus) = &emulator.rom_manager.bus {
+                    ui.separator();
+
                     ui.text(format!("Mapper: {}", bus.cartridge.mapper_num));
                     ui.same_line_with_spacing(10.0, 80.0);
 
@@ -100,11 +107,10 @@ impl EmulatorUi {
             });
     }
 
-    // TODO: add pattern table viewer
-    fn ppu_state_window(&self, ui: &Ui, emulator: &mut Emulator) {
-        ui.window("PPU state")
-            .size([300.0, 300.0], imgui::Condition::FirstUseEver)
-            .position([900.0, 270.0], imgui::Condition::FirstUseEver)
+    fn ppu_state_window(&mut self, ui: &Ui, emulator: &mut Emulator, renderer: &mut Renderer, display: &mut Display<WindowSurface>) {
+        ui.window("PPU State")
+            .size([300.0, 350.0], imgui::Condition::FirstUseEver)
+            .position([900.0, 370.0], imgui::Condition::FirstUseEver)
             .build(|| {
                 if let Some(bus) = &emulator.rom_manager.bus {
                     let ppu = &emulator.ppu;
@@ -117,9 +123,11 @@ impl EmulatorUi {
                     if let Some(_) = ui.tab_bar("Settings Tab") {  
                         TabItem::new("Registers").build(ui, || {
 
-                            // use register_label instead
                             register_label("PPU Scanline", &ppu.scanline);
                             register_label("PPU Dot", &ppu.cycles);
+                            register_label("Vertical Blank", &ppu_bus.status.in_vblank());
+                            register_label("Sprite Overflow", &ppu_bus.status.spr_overflow());
+                            register_label("Sprite 0 Hit", &ppu_bus.status.spr_0_hit());
                             register_label("NMI Enabled", &ppu_bus.ctrl.nmi_enabled());
                             register_label("Sprite Height", &ppu_bus.ctrl.spr_height());
                             register_label("Show BG", &ppu_bus.mask.show_bg());
@@ -129,7 +137,36 @@ impl EmulatorUi {
                         });
 
                         TabItem::new("Pattern Table").build(ui, || {
-                            ui.text("TODO:")
+                            let mut frame = [0xFF; 2 * 4 * PATTERN_TABLE_LENGTH];
+
+                            for table in 0..2 {
+                                let patt_table = emulator.ppu.get_pattern_table(&bus, table, self.selected_palette);
+                                let offset = PATTERN_TABLE_W_H * table;
+
+                                for y in 0..PATTERN_TABLE_W_H {
+                                    for x in 0..PATTERN_TABLE_W_H {
+                                        let frame_i = offset + x + y * 2 * PATTERN_TABLE_W_H;
+                                        let table_i = x + y * PATTERN_TABLE_W_H;
+
+                                        frame[4 * frame_i + 0] = patt_table[table_i].0;
+                                        frame[4 * frame_i + 1] = patt_table[table_i].1;
+                                        frame[4 * frame_i + 2] = patt_table[table_i].2;
+                                    }
+                                }
+                            }
+                            
+                            self.pattern_table_frame.update_frame(frame.to_vec(), display, renderer);
+                            self.pattern_table_frame.build(ui, 10.0);
+                            
+                            ui.text(format!("Viewing Palette: {}", self.selected_palette));
+                            for i in 0..8 {  
+                                if ui.button(format!("{}", i)) {
+                                    self.selected_palette = i;
+                                }
+                                if i != 7 {
+                                    ui.same_line();
+                                }
+                            }
                         });
                     }
 
@@ -149,12 +186,14 @@ impl EmulatorUi {
                 .build();
         };
 
-        ui.window("APU state")
+        ui.window("APU State")
             .size([300.0, 380.0], imgui::Condition::Always)
             .position([0.0, 420.0], imgui::Condition::Always)
             .build(|| {
                 if emulator.rom_manager.bus.is_some() {
-                    let _ = ui.slider("Master Volume", 0.0, 1.0, &mut emulator.audio_player.master_volume);
+                    ui.text("Master Volume");
+                    let _ = ui.slider("##slider", 0.0, 1.0, &mut emulator.audio_player.master_volume);
+                    ui.separator();
 
                     let apu = &mut emulator.cpu.apu;
 
@@ -175,7 +214,6 @@ impl EmulatorUi {
             });
     }
 
-    // TODO: add dissasembly tab 
     fn cpu_state_window(&self, ui: &Ui, emulator: &mut Emulator) {
         let style = ui.push_style_var(imgui::StyleVar::ItemInnerSpacing([0.0, 0.0]));
 
@@ -183,31 +221,31 @@ impl EmulatorUi {
             ui.text(&format!("{:<7}{}", format!("{}:", name), format!("0x{:02X}", value)));
         };
 
-        ui.window("CPU state")
-            .size([320.0, 250.0], imgui::Condition::FirstUseEver)
+        ui.window("CPU State")
+            .size([320.0, 350.0], imgui::Condition::FirstUseEver)
             .position([900.0, 20.0], imgui::Condition::FirstUseEver)
             .build(|| {
                 if let Some(bus) = &mut emulator.rom_manager.bus {
-
                     let cpu = &emulator.cpu;
 
-                    if let Some(_) = ui.tab_bar("Settings Tab") {  
-                        TabItem::new("Registers").build(ui, || {
-                            
+                    register_label(cpu.accumulator, "A");
+                    ui.same_line();
+                    register_label(cpu.stack_pointer, "SP");
 
-                            register_label(cpu.accumulator, "A");
-                            register_label(cpu.x_index_reg, "X");
-                            register_label(cpu.y_index_reg, "Y");
-                            register_label(cpu.stack_pointer, "SP");
-                            ui.text(&format!("{:<7}{}", "PC:", format!("0x{:04X}", cpu.program_counter)));
-                            ui.text_wrapped(format!("Total CPU cycles: {}", cpu.total_cycles));
-                        });
+                    register_label(cpu.x_index_reg, "X");
+                    ui.same_line();
+                    register_label(cpu.y_index_reg, "Y");
 
-                        TabItem::new("Dissasembly").build(ui, || {
-                            for instruction in emulator.cpu.get_disassembly(bus, 10) {
-                                ui.text(instruction);
-                            }
-                        });
+                    register_label(cpu.processor_status, "P");
+                    ui.same_line();
+                    ui.text(&format!("{:<7}{}", "PC:", format!("0x{:04X}", cpu.program_counter)));
+
+                    ui.text_wrapped(format!("Total CPU cycles: {}", cpu.total_cycles));
+                    
+                    ui.separator();
+                    ui.separator();
+                    for instruction in emulator.cpu.get_disassembly(bus, 10) {
+                        ui.text(instruction);
                     }
                     
                 } else {
@@ -226,16 +264,22 @@ impl EmulatorUi {
                 if ui.button(if emulator.paused {"Unpause"} else {"Pause"}) {
                     emulator.paused = !emulator.paused
                 }
+                ui.same_line();
                 if ui.button("Restart") {
                     emulator.reset();
                 }
+                ui.same_line();
                 if ui.button("Stop") {
                     emulator.stop_emulation(logger, display, renderer);
                 }
 
+                ui.separator();
+
                 if ui.slider("Game Speed", 0.5, 2.0, &mut emulator.game_speed) {
                     emulator.cpu.apu.adjust_cpu_clock_rate(emulator.game_speed);
                 }
+
+                ui.spacing();
 
                 if ui.button("Default Game Speed") {
                     emulator.game_speed = 1.0;
@@ -252,15 +296,15 @@ impl EmulatorUi {
 
             ui.menu("Emulation", || {
 
-                if ui.menu_item("Show CPU state") {
+                if ui.menu_item("Show CPU State") {
                     self.cpu_window = !self.cpu_window;
                 }
 
-                if ui.menu_item("Show PPU state") {
+                if ui.menu_item("Show PPU State") {
                     self.ppu_window = !self.ppu_window;
                 }
 
-                if ui.menu_item("Show APU state") {
+                if ui.menu_item("Show APU State") {
                     self.apu_window = !self.apu_window
                 }          
             });
@@ -308,5 +352,58 @@ impl EmulatorUi {
                     emulator.joypad.reset_keys();
                 }
             });
+    }
+}
+
+
+pub struct PixelFrame {
+    texture_id: TextureId,
+    sampler: uniforms::SamplerBehavior,
+    width: u32,
+    height: u32,
+}
+
+impl PixelFrame {
+    pub fn new(width: u32, height: u32, renderer: &mut Renderer, display: &mut Display<WindowSurface>) -> Self {
+        let image = RawImage2d::from_raw_rgba(vec![0; (4 * width * height) as usize], (width, height));
+        
+        let sampler = uniforms::SamplerBehavior {
+            magnify_filter: uniforms::MagnifySamplerFilter::Nearest,
+            minify_filter: uniforms::MinifySamplerFilter::Nearest,
+            ..Default::default()
+        };
+
+        let texture = Rc::new(Texture2d::new(display, image).unwrap());
+        let texture_id = renderer.textures().insert(Texture { texture: Rc::clone(&texture), sampler });
+
+        Self {
+            texture_id,
+            sampler,
+            width,
+            height,
+        }
+    }
+
+    pub fn build(&self, ui: &Ui, window_margin: f32) {
+        let mut size = ui.window_size();
+
+        // ensure proper aspect ratio
+        if size[0] * (self.height as f32) < (self.width as f32) * size[1] {
+            size[1] = self.height as f32 * size[0] / self.width as f32;
+        } else {
+            size[0] = self.width as f32 * size[1] / self.height as f32;
+        }
+
+        size[0] -= 2.0 * window_margin;
+        size[1] -= 2.0 * window_margin;
+
+        Image::new(self.texture_id, size)
+            .build(&ui);
+    }
+
+    pub fn update_frame(&mut self, frame: Vec<u8>, display: &mut Display<WindowSurface>, renderer: &mut Renderer) {
+        let image = RawImage2d::from_raw_rgba(frame, (self.width, self.height));
+        let new_texture = Rc::new(Texture2d::new(display, image).unwrap());
+        renderer.textures().replace(self.texture_id, Texture { texture: new_texture, sampler: self.sampler });
     }
 }

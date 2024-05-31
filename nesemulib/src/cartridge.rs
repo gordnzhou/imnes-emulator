@@ -127,12 +127,12 @@ impl CartridgeNes {
         self.mapper.mapped_cpu_write(&mut self.prg_rom, addr, byte)
     }
 
-    pub fn ppu_read(&mut self, addr: usize) -> u8 {
+    pub fn ppu_read(&self, addr: usize) -> u8 {
         if self.no_chr_rom {
             return self.chr_rom[addr];
         }
 
-        self.mapper.mapped_ppu_read(&mut self.chr_rom, addr)
+        self.mapper.mapped_ppu_read(&self.chr_rom, addr)
     }
 
     pub fn ppu_write(&mut self, addr: usize, byte: u8) {

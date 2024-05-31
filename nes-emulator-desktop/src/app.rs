@@ -46,7 +46,7 @@ impl App {
         let mut ui_want_text_input = false;
 
         let mut logger = Logger::new();
-        let mut emulator_ui = EmulatorUi::new();
+        let mut emulator_ui = EmulatorUi::new(&mut renderer, &mut display);
         let mut emulator = Emulator::new(screen);
 
         emulator.reset();
@@ -83,6 +83,8 @@ impl App {
 
                     emulator.draw_screen(&mut display, &mut renderer, ui);
 
+                    logger.display_event_log(ui);
+
                     emulator_ui.render_emulation(&mut emulator, ui, &mut logger, &mut display, &mut renderer);
                     
                     let now = std::time::Instant::now();
@@ -90,8 +92,6 @@ impl App {
                         last_save = now;
                         emulator.rom_manager.do_auto_save(&mut logger);
                     }
-
-                    logger.display_event_log(ui);
 
                     // Setup for drawing
                     let mut target = display.draw();

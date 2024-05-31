@@ -10,6 +10,11 @@ use crate::{SystemControl, DISPLAY_HEIGHT, DISPLAY_WIDTH};
 
 use self::ppubus::{OAMEntry, ATTR_TABLE_START, NAME_TABLE_START, OAM_SIZE, PALETTE_TABLE_START};
 
+// pattern table contains a 16x16 grid of tiles; a tile is an 8x8 grid of pixels
+// 1 pattern table row * 16 tiles/row * 8 pixels/tile = 128 pixels
+pub const PATTERN_TABLE_W_H: usize = 128;
+pub const PATTERN_TABLE_LENGTH: usize = PATTERN_TABLE_W_H * PATTERN_TABLE_W_H;
+
 const SPRITE_CACHE_SIZE: usize = 8;
 
 const OAM_ENTRY_BYTES: usize = 4;
@@ -431,7 +436,7 @@ impl Ppu2C03 {
     }
 
     #[inline]
-    fn get_colour_from_palette(bus: &mut SystemBus, palette: usize, pixel: usize) -> Colour {
+    fn get_colour_from_palette(bus: &SystemBus, palette: usize, pixel: usize) -> Colour {
         let palette_index = bus.ppu_read(PALETTE_TABLE_START + (palette << 2) + pixel) as usize;
         DISPLAY_PALETTE[palette_index]
     }
@@ -476,6 +481,33 @@ impl Ppu2C03 {
         let ret = self.nmi;
         self.nmi = false;
         ret
+    }
+
+    // Index: 0 or 1, palette: 0 to 7
+    pub fn get_pattern_table(&self, bus: &SystemBus, index: usize, palette: usize) -> [Colour; PATTERN_TABLE_W_H * PATTERN_TABLE_W_H] {
+        let mut patt_table = [DISPLAY_PALETTE[0x01]; PATTERN_TABLE_W_H * PATTERN_TABLE_W_H];
+
+        for tile_y in 0..16 {
+
+            for tile_x in 0..16 {
+                
+                let tile_offset = (tile_y * 256) + tile_x * 8;
+                
+                for row in 0..8 {
+                    let tile_lo = bus.ppu_read(index * 0x1000 + tile_offset + row + 0x0000);
+                    let tile_hi = bus.ppu_read(index * 0x1000 + tile_offset + row + 0x0008);
+
+                    for col in 0..8 {
+                        let pixel = (((tile_hi & (1 << col)) >> col) << 1)
+                            | ((tile_lo & (1 << col)) >> col);
+
+                        patt_table[((tile_y * 8 + row) << 7) | tile_x * 8 + (7 - col)] = Self::get_colour_from_palette(bus, palette, pixel as usize);
+                    }
+                }
+            }
+        }
+
+        patt_table
     }
 }
 

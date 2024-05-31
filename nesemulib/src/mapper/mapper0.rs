@@ -46,7 +46,7 @@ impl Mapper for Mapper0 {
         }
     }
     
-    fn mapped_ppu_read(&mut self, chr_rom: &mut Vec<u8>, addr: usize) -> u8 { 
+    fn mapped_ppu_read(&self, chr_rom: &Vec<u8>, addr: usize) -> u8 { 
         match addr {
             0x0000..=0x1FFF => chr_rom[addr],
             _ => unreachable!(),

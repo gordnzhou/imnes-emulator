@@ -138,6 +138,23 @@ impl PpuMask {
     }
 }
 
+impl PpuStatus {
+    #[inline]
+    pub fn spr_overflow(&self) -> bool {
+        self.contains(PpuStatus::SPR_OVERFLOW)
+    }
+
+    #[inline]
+    pub fn spr_0_hit(&self) -> bool {
+        self.contains(PpuStatus::SPR_0_HIT)
+    }
+
+    #[inline]
+    pub fn in_vblank(&self) -> bool {
+        self.contains(PpuStatus::IN_VBLANK)
+    }
+}
+
 
 #[derive(Default, Clone, Copy, Debug)]
 pub struct LoopyPpuReg(pub u16);

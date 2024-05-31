@@ -50,7 +50,7 @@ pub trait Mapper: SystemControl {
 
 
     /// Returns the addressed pattern table byte (from PPU 0x0000 to 0x1FFF)
-    fn mapped_ppu_read(&mut self, chr_rom: &mut Vec<u8>, addr: usize) -> u8;
+    fn mapped_ppu_read(&self, chr_rom: &Vec<u8>, addr: usize) -> u8;
     
 
     /// not used by any mappers so far...

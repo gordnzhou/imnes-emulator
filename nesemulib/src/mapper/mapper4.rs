@@ -150,7 +150,7 @@ impl Mapper for Mapper4 {
         }
     }
 
-    fn mapped_ppu_read(&mut self, chr_rom: &mut Vec<u8>, addr: usize) -> u8 {
+    fn mapped_ppu_read(&self, chr_rom: &Vec<u8>, addr: usize) -> u8 {
         let bank_index = (addr & 0x1C00) >> 10;
         chr_rom[self.chr_bank_offset[bank_index] + (addr & 0x03FF)]
     }

@@ -1,10 +1,12 @@
-use std::{rc::Rc, time::{Duration, Instant}};
+use std::time::{Duration, Instant};
 
-use glium::{texture::RawImage2d, uniforms, Display, Texture2d};
+use glium::Display;
 use glutin::surface::WindowSurface;
-use imgui::{Image, TextureId, Ui};
-use imgui_glium_renderer::{Renderer, Texture};
+use imgui::Ui;
+use imgui_glium_renderer::Renderer;
 use nesemulib::{Colour, DISPLAY_HEIGHT, DISPLAY_WIDTH};
+
+use crate::ui::PixelFrame;
 
 const DEFAULT_WINDOW_SIZE: [f32; 2] = [583.0, 568.0];
 const SCREEN_MARGIN: f32 = 10.0;
@@ -12,8 +14,7 @@ const SCREEN_MARGIN: f32 = 10.0;
 const FRAME_LENGTH: usize = DISPLAY_WIDTH * DISPLAY_HEIGHT * 4;
 
 pub struct Screen {
-    texture_id: TextureId,
-    sampler: uniforms::SamplerBehavior,
+    screen_frame: PixelFrame,
 
     fps: f32,
     last_frame_update: Instant,
@@ -26,21 +27,8 @@ impl Screen {
         let width = DISPLAY_WIDTH as u32;
         let height = DISPLAY_HEIGHT as u32;
 
-        let image = RawImage2d::from_raw_rgba([0; FRAME_LENGTH].to_vec(), 
-            (width, height));
-        let sampler = uniforms::SamplerBehavior {
-            magnify_filter: uniforms::MagnifySamplerFilter::Nearest,
-            minify_filter: uniforms::MinifySamplerFilter::Nearest,
-            ..Default::default()
-        };
-
-        let texture = Rc::new(Texture2d::new(display, image).unwrap());
-        let texture_id = renderer.textures().insert(Texture { texture: Rc::clone(&texture), sampler });
-
         Self {
-            texture_id,
-            sampler,
-
+            screen_frame: PixelFrame::new(width, height, renderer, display),
             fps: 0.0,
             last_frame_update: Instant::now(),
             last_total_frames: 0,
@@ -58,8 +46,8 @@ impl Screen {
                 frame[4 * i + 2] = colours[i].2;
             }
             
-            self.update_screen(frame, display, renderer);
             self.total_frames += 1;
+            self.screen_frame.update_frame(frame.to_vec(), display, renderer);
         }
 
         if Instant::now() - self.last_frame_update >= Duration::from_secs(1) {
@@ -78,39 +66,21 @@ impl Screen {
                 } else {
                     format!("NO ROM DETECTED")
                 };
-
-                // ensure correct aspect ratio
-                let mut window_size = ui.window_size();
-                if window_size[0] < window_size[1] {
-                    window_size[1] = DISPLAY_HEIGHT as f32 * window_size[0] / DISPLAY_WIDTH as f32;
-                } else {
-                    window_size[0] = DISPLAY_WIDTH as f32 * window_size[1] / DISPLAY_HEIGHT as f32;
-                }
-
-                let screen_width = window_size[0] - 2.0 * SCREEN_MARGIN;
-                let screen_height = window_size[1] - 2.0 * SCREEN_MARGIN;
                         
                 ui.text(text);
                 ui.separator();
-                Image::new(self.texture_id, [screen_width, screen_height])
-                    .build(&ui);
+                
+                self.screen_frame.build(ui, SCREEN_MARGIN);
             });
     }
 
     pub fn clear_screen(&mut self, display: &mut Display<WindowSurface>, renderer: &mut Renderer) {
-        self.update_screen([0; FRAME_LENGTH], display, renderer)
+        self.screen_frame.update_frame(vec![0; FRAME_LENGTH], display, renderer);
     }
 
     pub fn reset(&mut self) {
         self.last_frame_update = Instant::now();
         self.last_total_frames = 0;
         self.total_frames = 0;
-    }
-
-    #[inline]
-    fn update_screen(&mut self, frame: [u8; FRAME_LENGTH], display: &mut Display<WindowSurface>, renderer: &mut Renderer) {
-        let image = RawImage2d::from_raw_rgba(frame.to_vec(), (DISPLAY_WIDTH as u32, DISPLAY_HEIGHT as u32));
-        let new_texture = Rc::new(Texture2d::new(display, image).unwrap());
-        renderer.textures().replace(self.texture_id, Texture { texture: new_texture, sampler: self.sampler });
     }
 }

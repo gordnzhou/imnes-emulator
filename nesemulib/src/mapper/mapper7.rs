@@ -35,7 +35,7 @@ impl Mapper for Mapper7 {
         }
     }
 
-    fn mapped_ppu_read(&mut self, chr_rom: &mut Vec<u8>, addr: usize) -> u8 {
+    fn mapped_ppu_read(&self, chr_rom: &Vec<u8>, addr: usize) -> u8 {
         chr_rom[self.chr_rom_1kb * (CHR_ROM_SIZE >> 1) + (addr & 0x0FFF)]
     }
 }

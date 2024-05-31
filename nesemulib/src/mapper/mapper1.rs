@@ -133,7 +133,7 @@ impl Mapper for Mapper1 {
         }
     }
 
-    fn mapped_ppu_read(&mut self, chr_rom: &mut Vec<u8>, addr: usize) -> u8 {
+    fn mapped_ppu_read(&self, chr_rom: &Vec<u8>, addr: usize) -> u8 {
         match addr {
             CHR_ROM_LO_START..=CHR_ROM_LO_END => {
                 if self.control_reg & 0b10000 != 0 {

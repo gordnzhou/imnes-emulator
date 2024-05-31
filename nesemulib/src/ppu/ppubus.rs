@@ -223,7 +223,7 @@ impl PpuBus {
         }
     }
 
-    pub fn ppu_read(&mut self, addr: usize, cartridge: &mut CartridgeNes) -> u8 {
+    pub fn ppu_read(&self, addr: usize, cartridge: &CartridgeNes) -> u8 {
         let mut addr = addr & 0x3FFF;
         
         match addr {
