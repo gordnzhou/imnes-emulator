@@ -1025,14 +1025,88 @@ impl Cpu6502 {
     }
 
     fn read_byte(&mut self, bus: &mut SystemBus, addr: u16) -> u8 {
-        match bus.cpu_read(addr as usize) {
+        match bus.cpu_read(addr as usize, false) {
             Some(byte) => return byte,
             None => {}
         };
 
         let addr = addr as usize;
         match addr {
-            APU_REG_START..=APU_REG_END | 0x4015  => self.apu.read_register(addr),
+            APU_REG_START..=APU_REG_END | 0x4015  => self.apu.read_register(addr, false),
+            _ => 0
+        }
+    }
+
+    pub fn get_disassembly(&mut self, bus: &mut SystemBus, instructions: usize) -> Vec<String> {
+        let mut address = self.program_counter;
+        let mut ret = Vec::new();
+
+
+        for _ in 0..instructions {
+            let opcode = self.peek_byte(bus, address);
+
+            match OPCODES_LOOKUP[opcode as usize] {
+                Some(op) => {
+                    if op.illegal && !ILLEGAL_OPCODES_ENABLED {
+                        panic!("Illegal Opcode: {:02x}", opcode);
+                    }
+
+                    let byte_lo =  self.peek_byte(bus, address.wrapping_add(1)) as u16;
+                    let byte_hi = self.peek_byte(bus, address.wrapping_add(2)) as u16;
+
+                    let abs_addr = (byte_hi << 8) | byte_lo;
+
+                    let (instr_len, suffix) = match op.addr_mode {
+                        AddrMode::ABS => (3, format!("${:04X} (ABS)", abs_addr)),
+                        AddrMode::IND => {
+                            let abs_byte_lo =  self.peek_byte(bus, abs_addr) as u16;
+                            let abs_byte_hi = self.peek_byte(bus, abs_addr.wrapping_add(1)) as u16;
+                            (3, format!("(${:04X})=${:04X} (IND)", abs_addr, (abs_byte_hi << 8) | abs_byte_lo))
+                        },
+                        AddrMode::ABX => (3, format!("${:04X} + X = ${:04X} (ABS, X)", abs_addr, abs_addr.wrapping_add(self.x_index_reg as u16))),
+                        AddrMode::ABY => (3, format!("${:04X} + Y = ${:04X} (ABS, Y)", abs_addr, abs_addr.wrapping_add(self.y_index_reg as u16))),
+                        AddrMode::ZPG => (2, format!("${:04X} (ZPG)", byte_lo)),
+                        AddrMode::ZPX => (2, format!("${:04X} (ZPG, X)", byte_lo as u8 + self.x_index_reg)),
+                        AddrMode::ZPY => (2, format!("${:04X} (ZPG, Y)", byte_lo as u8 + self.y_index_reg)),
+                        AddrMode::INX => {
+                            let ptr = (byte_lo as u8 + self.x_index_reg) as u16;
+                            let addr_lo = self.peek_byte(bus, ptr) as u16;
+                            let addr_hi =  self.peek_byte(bus, ptr.wrapping_add(1)) as u16;
+                            (2, format!("(${:02X} + X = ${:04X})=${:04X} (IND, X)", byte_lo, ptr, (addr_hi << 8) | addr_lo))
+                        },
+                        AddrMode::INY => {
+                            let ptr = byte_lo;
+                            let addr_lo = self.peek_byte(bus, ptr) as u16;
+                            let addr_hi =  self.peek_byte(bus, ptr.wrapping_add(1)) as u16;
+                            let addr = (addr_hi << 8) | addr_lo;
+                            (2, format!("(${:04X})=${:04X} + Y = ${:04X} (IND, Y)", byte_lo, addr, addr.wrapping_add(self.y_index_reg as u16)))
+                        },
+                        AddrMode::REL => (2, format!("${:04X} (REL)", self.program_counter as i32 + (byte_lo as i8) as i32)),
+                        AddrMode::IMM => (2, format!("#${:02X} (IMM)",byte_lo)),
+                        AddrMode::ACC => (1, format!("${:02X} (ACC)", self.accumulator)),
+                        AddrMode::IMP => (1, format!("(IMP)")),
+                    }; 
+
+                    ret.push(format!("{:04X} {:?}     {}", address, op.instr, suffix));
+
+                    address += instr_len
+                },
+                None => panic!("Unrecognized/Unsupported Opcode: {:02x}", opcode)
+            };
+        }
+
+        ret
+    }
+
+    pub fn peek_byte(&mut self, bus: &mut SystemBus, addr: u16) -> u8 {
+        match bus.cpu_read(addr as usize, true) {
+            Some(byte) => return byte,
+            None => {}
+        };
+
+        let addr = addr as usize;
+        match addr {
+            APU_REG_START..=APU_REG_END | 0x4015  => self.apu.read_register(addr, true),
             _ => 0
         }
     }

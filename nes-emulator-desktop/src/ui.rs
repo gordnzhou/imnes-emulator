@@ -19,9 +19,9 @@ pub struct EmulatorUi {
 impl EmulatorUi {
     pub fn new() -> Self {
         Self {
-            cpu_window: false,
-            apu_window: false,
-            ppu_window: false,
+            cpu_window: true,
+            apu_window: true,
+            ppu_window: true,
 
             new_sample_rate: DEFAULT_SAMPLE_RATE,
         }
@@ -35,7 +35,7 @@ impl EmulatorUi {
 
         self.rom_window(ui, logger, emulator);
 
-        self.main_menu(emulator, ui);
+        self.main_menu(emulator, ui, logger);
     }
 
     fn emulation_state_windows(&self, ui: &Ui, emulator: &mut Emulator) {
@@ -54,15 +54,16 @@ impl EmulatorUi {
 
     pub fn rom_window(&self, ui: &Ui, logger: &mut Logger, emulator: &mut Emulator) {
         ui.window("ROMs")
-            .size([300.0, 200.0], imgui::Condition::FirstUseEver)
-            .position([20.0, 20.0], imgui::Condition::FirstUseEver)
+            .size([300.0, 200.0], imgui::Condition::Always)
+            .position([0.0, 20.0], imgui::Condition::Always)
             .build(|| {
                 let mut file_name = None;
 
                 {
                     let rm = &mut emulator.rom_manager;
 
-                    ui.combo("Select a ROM file", &mut rm.selected_file, &rm.file_names, |i| {
+                    ui.text("Select a ROM file");
+                    ui.combo("##combo", &mut rm.selected_file, &rm.file_names, |i| {
                         Cow::Borrowed(i)
                     });
 
@@ -70,6 +71,8 @@ impl EmulatorUi {
                         file_name = Some(format!("{}{}", rm.roms_folder, &rm.file_names[rm.selected_file]));  
                     }
                 }
+
+                ui.separator();
 
                 // Try to load a ROM if a file was chosen and confirmed by button
                 if let Some(file_name) = file_name {
@@ -101,22 +104,34 @@ impl EmulatorUi {
     fn ppu_state_window(&self, ui: &Ui, emulator: &mut Emulator) {
         ui.window("PPU state")
             .size([300.0, 300.0], imgui::Condition::FirstUseEver)
-            .position([900.0, 400.0], imgui::Condition::FirstUseEver)
+            .position([900.0, 270.0], imgui::Condition::FirstUseEver)
             .build(|| {
                 if let Some(bus) = &emulator.rom_manager.bus {
                     let ppu = &emulator.ppu;
                     let ppu_bus = &bus.ppu_bus;
 
-                    ui.label_text("PPU scanline", format!("{}", ppu.scanline));
-                    ui.label_text("PPU dot", format!("{}", ppu.cycles));
+                    let register_label = |name: &str, value: &dyn std::fmt::Display| {
+                        ui.label_text(format!("{}", value), format!("{}:", name));
+                    };
 
-                    ui.label_text("NMI enabled", format!("{}", ppu_bus.ctrl.nmi_enabled()));
-                    ui.label_text("Sprite Height", format!("{}", ppu_bus.ctrl.spr_height()));
+                    if let Some(_) = ui.tab_bar("Settings Tab") {  
+                        TabItem::new("Registers").build(ui, || {
 
-                    ui.label_text("Show BG", format!("{}", ppu_bus.mask.show_bg()));
-                    ui.label_text("Show SPR", format!("{}", ppu_bus.mask.show_spr()));
-                    ui.label_text("Show BG left", format!("{}", ppu_bus.mask.show_bg_left()));
-                    ui.label_text("Show SPR left", format!("{}", ppu_bus.mask.show_spr_left()));
+                            // use register_label instead
+                            register_label("PPU Scanline", &ppu.scanline);
+                            register_label("PPU Dot", &ppu.cycles);
+                            register_label("NMI Enabled", &ppu_bus.ctrl.nmi_enabled());
+                            register_label("Sprite Height", &ppu_bus.ctrl.spr_height());
+                            register_label("Show BG", &ppu_bus.mask.show_bg());
+                            register_label("Show SPR", &ppu_bus.mask.show_spr());
+                            register_label("Show BG left", &ppu_bus.mask.show_bg_left());
+                            register_label("Show SPR left", &ppu_bus.mask.show_spr_left());
+                        });
+
+                        TabItem::new("Pattern Table").build(ui, || {
+                            ui.text("TODO:")
+                        });
+                    }
 
                 } else {
                     ui.text("(No currently running ROM)");
@@ -125,20 +140,29 @@ impl EmulatorUi {
     }
 
     fn apu_state_window(&self, ui: &Ui, emulator: &mut Emulator) {
+
+        let channel_sound_plot = |channel_name: &str, enabled: &mut bool, samples: &[f32]| {
+            let _ = ui.checkbox(channel_name, enabled);
+            ui.plot_lines(channel_name, samples)
+                .scale_min(0.0)
+                .scale_max(15.0)
+                .build();
+        };
+
         ui.window("APU state")
-            .size([300.0, 300.0], imgui::Condition::FirstUseEver)
-            .position([20.0, 450.0], imgui::Condition::FirstUseEver)
+            .size([300.0, 380.0], imgui::Condition::Always)
+            .position([0.0, 420.0], imgui::Condition::Always)
             .build(|| {
                 if emulator.rom_manager.bus.is_some() {
                     let _ = ui.slider("Master Volume", 0.0, 1.0, &mut emulator.audio_player.master_volume);
 
                     let apu = &mut emulator.cpu.apu;
 
-                    Self::apu_channel_state(ui, "Pulse 1", &mut apu.pulse1_enabled, &apu.pulse1_samples);
-                    Self::apu_channel_state(ui, "Pulse 2", &mut apu.pulse2_enabled, &apu.pulse2_samples);
-                    Self::apu_channel_state(ui, "Triangle", &mut apu.triangle_enabled, &apu.triangle_samples);
-                    Self::apu_channel_state(ui, "Noise", &mut apu.noise_enabled, &apu.noise_samples);
-                    Self::apu_channel_state(ui, "DMC", &mut apu.dmc_enabled, &apu.dmc_samples);
+                    channel_sound_plot("Pulse 1", &mut apu.pulse1_enabled, &apu.pulse1_samples);
+                    channel_sound_plot("Pulse 2", &mut apu.pulse2_enabled, &apu.pulse2_samples);
+                    channel_sound_plot("Triangle", &mut apu.triangle_enabled, &apu.triangle_samples);
+                    channel_sound_plot("Noise", &mut apu.noise_enabled, &apu.noise_samples);
+                    channel_sound_plot("DMC", &mut apu.dmc_enabled, &apu.dmc_samples);
 
                     apu.pulse1_samples.clear();
                     apu.pulse2_samples.clear();
@@ -151,40 +175,53 @@ impl EmulatorUi {
             });
     }
 
-    fn apu_channel_state(ui: &Ui, channel_name: &str, enabled: &mut bool, samples: &[f32]) {
-        let _ = ui.checkbox(channel_name, enabled);
-        ui.plot_lines(channel_name, samples)
-            .scale_min(0.0)
-            .scale_max(15.0)
-            .build();
-    }
-
     // TODO: add dissasembly tab 
     fn cpu_state_window(&self, ui: &Ui, emulator: &mut Emulator) {
+        let style = ui.push_style_var(imgui::StyleVar::ItemInnerSpacing([0.0, 0.0]));
+
+        let register_label = |value: u8, name: &str| {
+            ui.text(&format!("{:<7}{}", format!("{}:", name), format!("0x{:02X}", value)));
+        };
+
         ui.window("CPU state")
-            .size([300.0, 200.0], imgui::Condition::FirstUseEver)
+            .size([320.0, 250.0], imgui::Condition::FirstUseEver)
             .position([900.0, 20.0], imgui::Condition::FirstUseEver)
             .build(|| {
-                if emulator.rom_manager.bus.is_some() {
+                if let Some(bus) = &mut emulator.rom_manager.bus {
+
                     let cpu = &emulator.cpu;
 
-                    ui.label_text("A", format!("0x{:02X}", cpu.accumulator));
-                    ui.label_text("X", format!("0x{:02X}", cpu.x_index_reg));
-                    ui.label_text("Y", format!("0x{:02X}", cpu.y_index_reg));
-                    ui.label_text("P", format!("0x{:02X}", cpu.processor_status));
-                    ui.label_text("PC", format!("0x{:04X}", cpu.program_counter));
-                    ui.label_text("SP", format!("0x{:04X}", cpu.stack_pointer));
-                    ui.label_text("CPU cycles", format!("{}", cpu.total_cycles));
+                    if let Some(_) = ui.tab_bar("Settings Tab") {  
+                        TabItem::new("Registers").build(ui, || {
+                            
+
+                            register_label(cpu.accumulator, "A");
+                            register_label(cpu.x_index_reg, "X");
+                            register_label(cpu.y_index_reg, "Y");
+                            register_label(cpu.stack_pointer, "SP");
+                            ui.text(&format!("{:<7}{}", "PC:", format!("0x{:04X}", cpu.program_counter)));
+                            ui.text_wrapped(format!("Total CPU cycles: {}", cpu.total_cycles));
+                        });
+
+                        TabItem::new("Dissasembly").build(ui, || {
+                            for instruction in emulator.cpu.get_disassembly(bus, 10) {
+                                ui.text(instruction);
+                            }
+                        });
+                    }
+                    
                 } else {
                     ui.text("(No currently running ROM)");
                 }
             });
+
+        style.end();
     }
 
     pub fn show_options(&self, emulator: &mut Emulator, ui: &Ui, display: &mut Display<WindowSurface>, renderer: &mut Renderer, logger: &mut Logger) {
         ui.window("Emulation Options")
-            .size([300.0, 200.0], imgui::Condition::FirstUseEver)
-            .position([20.0, 300.0], imgui::Condition::FirstUseEver)
+            .size([300.0, 200.0], imgui::Condition::Always)
+            .position([0.0, 220.0], imgui::Condition::Always)
             .build(|| {
                 if ui.button(if emulator.paused {"Unpause"} else {"Pause"}) {
                     emulator.paused = !emulator.paused
@@ -207,7 +244,7 @@ impl EmulatorUi {
             });
     }
 
-    pub fn main_menu(&mut self, emulator: &mut Emulator, ui: &Ui) {
+    pub fn main_menu(&mut self, emulator: &mut Emulator, ui: &Ui, logger: &mut Logger) {
         ui.main_menu_bar(|| {
             if ui.menu_item("Settings") {
                 ui.open_popup("Settings");
@@ -228,11 +265,11 @@ impl EmulatorUi {
                 }          
             });
 
-            self.settings_popup(emulator, ui);
+            self.settings_popup(emulator, ui, logger);
         });
     }
 
-    fn settings_popup(&mut self, emulator: &mut Emulator, ui: &Ui) {
+    fn settings_popup(&mut self, emulator: &mut Emulator, ui: &Ui, logger: &mut Logger) {
         ui.modal_popup_config("Settings")
             .build(|| {
                 ui.child_window("Settings Child")
@@ -243,8 +280,9 @@ impl EmulatorUi {
                                 ui.checkbox("Enable Autosave", &mut emulator.rom_manager.auto_save);
 
                                 ui.input_scalar("Audio Sample Rate", &mut self.new_sample_rate).build();
-                                if ui.is_item_deactivated_after_edit() {
-                                    emulator.adjust_sample_rate(self.new_sample_rate);
+
+                                if ui.is_item_deactivated_after_edit() && self.new_sample_rate > 0 {
+                                    emulator.adjust_sample_rate(self.new_sample_rate, logger);
                                 }
                             });
 
@@ -254,7 +292,7 @@ impl EmulatorUi {
                                     emulator.joypad.reset_keys();
                                     emulator.rom_manager.auto_save = true;
 
-                                    emulator.adjust_sample_rate(DEFAULT_SAMPLE_RATE);
+                                    emulator.adjust_sample_rate(DEFAULT_SAMPLE_RATE, logger);
                                     self.new_sample_rate = DEFAULT_SAMPLE_RATE;
                                 }
                             });

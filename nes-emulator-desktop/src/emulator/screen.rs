@@ -6,14 +6,12 @@ use imgui::{Image, TextureId, Ui};
 use imgui_glium_renderer::{Renderer, Texture};
 use nesemulib::{Colour, DISPLAY_HEIGHT, DISPLAY_WIDTH};
 
-const SCREEN_SCALE: f32 = 2.5;
-const SCREEN_MARGIN: f32 = 20.0;
+const DEFAULT_WINDOW_SIZE: [f32; 2] = [583.0, 568.0];
+const SCREEN_MARGIN: f32 = 10.0;
 
 const FRAME_LENGTH: usize = DISPLAY_WIDTH * DISPLAY_HEIGHT * 4;
 
 pub struct Screen {
-    width: u32,
-    height: u32,
     texture_id: TextureId,
     sampler: uniforms::SamplerBehavior,
 
@@ -40,8 +38,6 @@ impl Screen {
         let texture_id = renderer.textures().insert(Texture { texture: Rc::clone(&texture), sampler });
 
         Self {
-            width,
-            height,
             texture_id,
             sampler,
 
@@ -71,13 +67,10 @@ impl Screen {
             self.fps = (self.total_frames - self.last_total_frames) as f32 / elapsed;
             self.last_total_frames = self.total_frames;
             self.last_frame_update = Instant::now();
-        }
-
-        let window_width = SCREEN_MARGIN + SCREEN_SCALE * self.width as f32;
-        let window_height = 2.0 * SCREEN_MARGIN + SCREEN_SCALE * self.height as f32;
+        };
 
         ui.window("Screen")
-            .size([window_width, window_height], imgui::Condition::FirstUseEver)
+            .size(DEFAULT_WINDOW_SIZE, imgui::Condition::FirstUseEver)
             .position([300.0, 20.0], imgui::Condition::Always)
             .build(|| {
                 let text = if let Some(name) = name {
@@ -86,9 +79,20 @@ impl Screen {
                     format!("NO ROM DETECTED")
                 };
 
+                // ensure correct aspect ratio
+                let mut window_size = ui.window_size();
+                if window_size[0] < window_size[1] {
+                    window_size[1] = DISPLAY_HEIGHT as f32 * window_size[0] / DISPLAY_WIDTH as f32;
+                } else {
+                    window_size[0] = DISPLAY_WIDTH as f32 * window_size[1] / DISPLAY_HEIGHT as f32;
+                }
+
+                let screen_width = window_size[0] - 2.0 * SCREEN_MARGIN;
+                let screen_height = window_size[1] - 2.0 * SCREEN_MARGIN;
+                        
                 ui.text(text);
                 ui.separator();
-                Image::new(self.texture_id, [SCREEN_SCALE * self.width as f32, SCREEN_SCALE * self.height as f32])
+                Image::new(self.texture_id, [screen_width, screen_height])
                     .build(&ui);
             });
     }
@@ -105,7 +109,7 @@ impl Screen {
 
     #[inline]
     fn update_screen(&mut self, frame: [u8; FRAME_LENGTH], display: &mut Display<WindowSurface>, renderer: &mut Renderer) {
-        let image = RawImage2d::from_raw_rgba(frame.to_vec(), (self.width, self.height));
+        let image = RawImage2d::from_raw_rgba(frame.to_vec(), (DISPLAY_WIDTH as u32, DISPLAY_HEIGHT as u32));
         let new_texture = Rc::new(Texture2d::new(display, image).unwrap());
         renderer.textures().replace(self.texture_id, Texture { texture: new_texture, sampler: self.sampler });
     }

@@ -37,7 +37,7 @@ impl SystemControl for Mapper1 {
 }
 
 impl Mapper for Mapper1 {
-    fn mapped_cpu_read(&mut self, prg_rom: &mut Vec<u8>, addr: usize) -> Option<u8> {
+    fn mapped_cpu_read(&self, prg_rom: &mut Vec<u8>, addr: usize) -> Option<u8> {
         match addr {
             SAVE_RAM_START..=SAVE_RAM_END => {
                 Some(self.save_ram[addr & 0x1FFF])

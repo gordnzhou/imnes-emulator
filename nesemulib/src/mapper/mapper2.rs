@@ -14,7 +14,7 @@ impl SystemControl for Mapper2 {
 }
 
 impl Mapper for Mapper2 {
-    fn mapped_cpu_read(&mut self, prg_rom: &mut Vec<u8>, addr: usize) -> Option<u8> {
+    fn mapped_cpu_read(&self, prg_rom: &mut Vec<u8>, addr: usize) -> Option<u8> {
         match addr {
             PRG_ROM_LO_START..=PRG_ROM_LO_END => {
                 Some(prg_rom[self.prg_bank_lo * PRG_ROM_SIZE + (addr & 0x3FFF)])

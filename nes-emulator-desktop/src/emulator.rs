@@ -58,10 +58,10 @@ impl Emulator {
         Ok(())
     }
 
-    pub fn adjust_sample_rate(&mut self, sample_rate: u32) {
+    pub fn adjust_sample_rate(&mut self, sample_rate: u32, logger: &mut Logger) {
         match self.audio_player.adjust_sample_rate(sample_rate) {
             Ok(()) => self.cpu.apu.adjust_sample_rate(sample_rate),
-            Err(_) => {}
+            Err(_) => logger.log_error(&format!("Unable to change audio sample rate to: {}", sample_rate))
         }
     }
 

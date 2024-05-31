@@ -14,7 +14,7 @@ impl SystemControl for Mapper3 {
 }
 
 impl Mapper for Mapper3 {
-    fn mapped_cpu_read(&mut self, prg_rom: &mut Vec<u8>, addr: usize) -> Option<u8> {
+    fn mapped_cpu_read(&self, prg_rom: &mut Vec<u8>, addr: usize) -> Option<u8> {
         match addr {
             PRG_ROM_START..=PRG_ROM_END => {
                 let addr = addr - PRG_ROM_START;

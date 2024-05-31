@@ -199,7 +199,7 @@ impl Apu2A03 {
         }
     } 
 
-    pub fn read_register(&mut self, addr: usize) -> u8 {
+    pub fn read_register(&mut self, addr: usize, read_only: bool) -> u8 {
         match addr {
             0x4015 => {
                 let mut byte = 0;
@@ -213,7 +213,9 @@ impl Apu2A03 {
                 if self.interrupt_flag                      { byte |= 1 << 6; }
                 if self.dmc.irq_flag                        { byte |= 1 << 7; }
 
-                self.interrupt_flag = false;
+                if !read_only {
+                    self.interrupt_flag = false;
+                }
 
                 byte
             },

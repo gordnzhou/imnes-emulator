@@ -76,7 +76,6 @@ impl App {
                     let ui = imgui_context.frame();
 
                     ui_want_text_input = ui.io().want_text_input;
-                    println!("{}", ui_want_text_input);
 
                     let now = std::time::Instant::now();
                     emulator.run_for_duration(now - last_emulation);

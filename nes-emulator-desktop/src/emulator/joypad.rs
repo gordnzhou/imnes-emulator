@@ -87,49 +87,26 @@ impl Joypad {
     }
 
     pub fn show_key_settings(&mut self, ui: &Ui) {
-        ui.text(format!("Current Right Key: {:?}", self.right_key));
-        ui.same_line_with_spacing(10.0, 300.0);
-        let right_key = ui.button(if self.polling_key == Some(0) { "Press any Key"} else {"Set Right Key"});
 
-        ui.text(format!("Current Left Key: {:?}", self.left_key));
-        ui.same_line_with_spacing(10.0, 300.0);
-        let left_key = ui.button(if self.polling_key == Some(1) { "Press any Key"} else {"Set Left Key"});
-
-        ui.text(format!("Current Down Key: {:?}", self.down_key));
-        ui.same_line_with_spacing(10.0, 300.0);
-        let down_key = ui.button(if self.polling_key == Some(2) { "Press any Key"} else {"Set Down Key"});
-        
-        ui.text(format!("Current Up Key: {:?}", self.up_key));
-        ui.same_line_with_spacing(10.0, 300.0);
-        let up_key = ui.button(if self.polling_key == Some(3) { "Press any Key"} else {"Set Up Key"});
-        
-        ui.separator();
-
-        ui.text(format!("Current Start Key: {:?}", self.start_key));
-        ui.same_line_with_spacing(10.0, 300.0);
-        let start_key = ui.button(if self.polling_key == Some(4) { "Press any Key"} else {"Set Start Key"});
-        
-        ui.text(format!("Current Select Key: {:?}", self.select_key));
-        ui.same_line_with_spacing(10.0, 300.0);
-        let select_key = ui.button(if self.polling_key == Some(5) { "Press any Key"} else {"Set Select Key"});
-        
-        ui.text(format!("Current A Key: {:?}", self.a_key));
-        ui.same_line_with_spacing(10.0, 300.0);
-        let a_key = ui.button(if self.polling_key == Some(6) { "Press any Key"} else {"Set A Key"});
-        
-        ui.text(format!("Current B Key: {:?}", self.b_key));
-        ui.same_line_with_spacing(10.0, 300.0);
-        let b_key = ui.button(if self.polling_key == Some(7) { "Press any Key"} else {"Set B Key"});
+        let key_setting = |key_name: &str, id: u8, key: KeyCode| -> bool {
+            ui.text(format!("Current {} Key:\n{:?}", key_name, key));
+            ui.same_line_with_spacing(10.0, 300.0);
+            ui.button(if self.polling_key == Some(id) { 
+                String::from("Press any Key...") 
+            }  else { 
+                format!("Set {} Key", key_name)
+            })
+        };
 
         self.polling_key = 
-            if right_key { Some(0) } 
-            else if left_key { Some(1) }
-            else if down_key { Some(2) }
-            else if up_key { Some(3) }
-            else if start_key { Some(4) }
-            else if select_key { Some(5) }
-            else if a_key { Some(6) }
-            else if b_key { Some(7) }
+            if key_setting("Right", 0, self.right_key) { Some(0) } 
+            else if key_setting("Left", 1, self.left_key) { Some(1) }
+            else if key_setting("Down", 2, self.down_key) { Some(2) }
+            else if key_setting("Up", 3, self.up_key) { Some(3) }
+            else if key_setting("Start", 4, self.start_key) { Some(4) }
+            else if key_setting("Select", 5, self.select_key) { Some(5) }
+            else if key_setting("A", 6, self.a_key) { Some(6) }
+            else if key_setting("B", 7, self.b_key) { Some(7) }
             else { self.polling_key };
 
         if let Some(current_key) = self.current_key {

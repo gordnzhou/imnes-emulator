@@ -127,15 +127,17 @@ impl PpuBus {
     }
 
     // CPU can only access the PPU memory map through the PPU registers
-    pub fn cpu_read_reg(&mut self, addr: usize, cartridge: &mut CartridgeNes) -> u8 {
+    pub fn cpu_read_reg(&mut self, addr: usize, cartridge: &mut CartridgeNes, read_only: bool) -> u8 {
         match addr & 0x0007 {
             0x0000 => 0,
             0x0001 => 0,
             0x0002 => {
                 let ret = (self.status.bits() & 0b11100000) | (self.ppu_data_buffer & 0b00011111);
 
-                self.status.remove(PpuStatus::IN_VBLANK);
-                self.ppu_addr_latch = false;
+                if !read_only {
+                    self.status.remove(PpuStatus::IN_VBLANK);
+                    self.ppu_addr_latch = false;
+                }
 
                 ret
             },
@@ -148,14 +150,22 @@ impl PpuBus {
             0x0007 => {
                 let mut ret = self.ppu_data_buffer;
 
-                if (self.vram_addr.0 as usize & 0x3FFF) >= PALETTE_TABLE_START {
-                    self.ppu_data_buffer = self.ppu_read((self.vram_addr.0 - 0x1000) as usize, cartridge);
-                    ret = self.ppu_data_buffer;
-                } else {
-                    self.ppu_data_buffer = self.ppu_read(self.vram_addr.0 as usize, cartridge);
-                }
+                if !read_only {
 
-                self.vram_addr.0 += self.ctrl.vram_addr_inc();
+                    if (self.vram_addr.0 as usize & 0x3FFF) >= PALETTE_TABLE_START {
+                        self.ppu_data_buffer = self.ppu_read((self.vram_addr.0 - 0x1000) as usize, cartridge);
+                        ret = self.ppu_data_buffer;
+                    } else {
+                        self.ppu_data_buffer = self.ppu_read(self.vram_addr.0 as usize, cartridge);
+                    }
+    
+                    self.vram_addr.0 += self.ctrl.vram_addr_inc();
+                } else {
+
+                    if (self.vram_addr.0 as usize & 0x3FFF) >= PALETTE_TABLE_START {
+                        ret = self.ppu_data_buffer;
+                    }
+                }
 
                 ret
             },

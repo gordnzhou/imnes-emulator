@@ -31,7 +31,8 @@ impl Logger {
 
     pub fn display_event_log(&self, ui: &Ui) {
         ui.window("Event Log")
-            .size([500.0, 200.0], imgui::Condition::FirstUseEver)
+            .size([800.0, 200.0], imgui::Condition::FirstUseEver)
+            .position([300.0, 600.0], imgui::Condition::FirstUseEver)
             .build(|| {
                 ui.child_window("Event Log Child")
                     .always_vertical_scrollbar(true)

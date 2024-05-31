@@ -12,7 +12,7 @@ impl SystemControl for TestMapper {
 }
 
 impl Mapper for TestMapper {
-    fn mapped_cpu_read(&mut self, _prg_rom: &mut Vec<u8>, addr: usize) -> Option<u8> {
+    fn mapped_cpu_read(&self, _prg_rom: &mut Vec<u8>, addr: usize) -> Option<u8> {
         Some(self.prg_rom[addr])
     }
     

@@ -42,7 +42,7 @@ const CHR_ROM_HI_END: usize = 0x1FFF;
 pub trait Mapper: SystemControl {
 
     /// Some contains the successfully read byte; None means read is meant to be done from elsewhere...
-    fn mapped_cpu_read(&mut self, prg_rom: &mut Vec<u8>, addr: usize) -> Option<u8>;
+    fn mapped_cpu_read(&self, prg_rom: &mut Vec<u8>, addr: usize) -> Option<u8>;
 
 
     /// Returns true if write was successful; false if write did nothing to the mapper...

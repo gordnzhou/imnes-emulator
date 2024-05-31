@@ -109,7 +109,7 @@ impl Dmc {
                 // stalls 1-4 cycles depending on various factors in real hardware
                 bus.dmc_read_stall = 2;
 
-                self.sample_buffer = Some(bus.cpu_read(self.address_counter).unwrap_or_default());
+                self.sample_buffer = Some(bus.cpu_read(self.address_counter, false).unwrap_or_default());
                 self.address_counter += 1;
                 self.bytes_left -= 1;
 

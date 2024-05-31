@@ -66,7 +66,7 @@ impl SystemBus {
         }
     }
 
-    pub fn cpu_read(&mut self, addr: usize) -> Option<u8> {
+    pub fn cpu_read(&mut self, addr: usize, read_only: bool) -> Option<u8> {
         match self.cartridge.cpu_read(addr) {
             Some(byte) => return Some(byte),
             None => {}
@@ -77,7 +77,7 @@ impl SystemBus {
                 Some(self.cpu_ram[addr % CPU_RAM_LENGTH])
             },
             PPU_REG_START..=PPU_REG_END => {
-                Some(self.ppu_bus.cpu_read_reg(addr, &mut self.cartridge))
+                Some(self.ppu_bus.cpu_read_reg(addr, &mut self.cartridge, read_only))
             },
             DMA_REG_ADDR => {
                 Some(0)
@@ -129,7 +129,7 @@ impl SystemBus {
             // read on even clock cycles, write on odd cycles
             if system_cycles & 0x01 == 0 {
                 let data_addr = (self.dma_page as usize) << 8 | (self.dma_addr as usize);
-                self.dma_data = self.cpu_read(data_addr).unwrap_or_default();
+                self.dma_data = self.cpu_read(data_addr, false).unwrap_or_default();
             } else {
                 self.ppu_bus.transfer_to_oam(self.dma_addr as usize, self.dma_data);
                 self.dma_addr = self.dma_addr.wrapping_add(1);
