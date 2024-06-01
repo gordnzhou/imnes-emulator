@@ -7,7 +7,7 @@ mod ui;
 use app::App;
 
 const TITLE: &str = "NES EMULATOR";
-const WINDOW_WIDTH: u32 = 1400;
+const WINDOW_WIDTH: u32 = 1200;
 const WINDOW_HEIGHT: u32 = 800;
 
 fn main() {
