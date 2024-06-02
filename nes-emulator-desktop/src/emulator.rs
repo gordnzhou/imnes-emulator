@@ -34,12 +34,13 @@ pub struct Emulator {
 
 impl Emulator {
     pub fn new(screen: Screen) -> Self {
-        let apu = Apu2A03::new(DEFAULT_SAMPLE_RATE);
+        let audio_player = AudioPlayer::new(DEFAULT_SAMPLE_RATE);
+        let apu = Apu2A03::new(audio_player.sample_rate);
 
         Self {
             cpu: Cpu6502::new(apu),
             ppu: Ppu2C03::new(),
-            audio_player: AudioPlayer::new(DEFAULT_SAMPLE_RATE),
+            audio_player,
             screen,
             joypad: Joypad::new(),
             rom_manager: RomManager::new(),
@@ -61,7 +62,7 @@ impl Emulator {
     pub fn adjust_sample_rate(&mut self, sample_rate: u32, logger: &mut Logger) {
         match self.audio_player.adjust_sample_rate(sample_rate) {
             Ok(()) => self.cpu.apu.adjust_sample_rate(sample_rate),
-            Err(_) => logger.log_error(&format!("Unable to change audio sample rate to: {}", sample_rate))
+            Err(e) => logger.log_error(&format!("Unable to change audio sample rate to {}: {}", sample_rate, e))
         }
     }
 
@@ -82,7 +83,7 @@ impl Emulator {
         self.total_cycles = 0;
     }
 
-    pub fn run_for_duration(&mut self, duration: Duration) {
+    pub fn run_for_duration(&mut self, duration: Duration, logger: &mut Logger) {
         if self.paused {
             return;
         }
@@ -120,6 +121,11 @@ impl Emulator {
                 self.total_cycles += 1;
                 duration_cycles -= 1;
             }
+        }
+
+        if self.cpu.jammed {
+            logger.log_error("Unable to continue executing ROM as JAM was called");
+            self.reset();
         }
     }
  

@@ -45,6 +45,7 @@ pub struct Cpu6502 {
 
     cycles: u32,
     pub total_cycles: u64,
+    pub jammed: bool
 }
 
 impl Cpu6502 {
@@ -65,6 +66,7 @@ impl Cpu6502 {
 
             cycles: 0,
             total_cycles: 0,
+            jammed: false
         }
     }
 
@@ -120,6 +122,7 @@ impl Cpu6502 {
         self.operand_addr = 0x0000;
         self.operand_data = 0x00;
         self.page_crossed = false;
+        self.jammed = false;
         self.apu.reset();
     }
 
@@ -807,6 +810,7 @@ impl Cpu6502 {
     pub(super) fn jam(&mut self, _bus: &mut SystemBus) -> u32 {
         // panic!("JAM instruction called!");
         println!("JAM instruction called!");
+        self.jammed = true;
         self.program_counter -= 1;
 
         0
@@ -1066,10 +1070,10 @@ impl Cpu6502 {
                         AddrMode::ABX => (3, format!("${:04X} + X = ${:04X} (ABS, X)", abs_addr, abs_addr.wrapping_add(self.x_index_reg as u16))),
                         AddrMode::ABY => (3, format!("${:04X} + Y = ${:04X} (ABS, Y)", abs_addr, abs_addr.wrapping_add(self.y_index_reg as u16))),
                         AddrMode::ZPG => (2, format!("${:04X} (ZPG)", byte_lo)),
-                        AddrMode::ZPX => (2, format!("${:04X} (ZPG, X)", byte_lo as u8 + self.x_index_reg)),
-                        AddrMode::ZPY => (2, format!("${:04X} (ZPG, Y)", byte_lo as u8 + self.y_index_reg)),
+                        AddrMode::ZPX => (2, format!("${:04X} (ZPG, X)", self.x_index_reg.wrapping_add(byte_lo as u8))),
+                        AddrMode::ZPY => (2, format!("${:04X} (ZPG, Y)", self.y_index_reg.wrapping_add(byte_lo as u8))),
                         AddrMode::INX => {
-                            let ptr = (byte_lo as u8 + self.x_index_reg) as u16;
+                            let ptr = self.x_index_reg.wrapping_add(byte_lo as u8) as u16;
                             let addr_lo = self.peek_byte(bus, ptr) as u16;
                             let addr_hi =  self.peek_byte(bus, ptr.wrapping_add(1)) as u16;
                             (2, format!("(${:02X} + X = ${:04X})=${:04X} (IND, X)", byte_lo, ptr, (addr_hi << 8) | addr_lo))
@@ -1172,6 +1176,7 @@ mod tests {
     
                 cycles: 0,
                 total_cycles: 0,
+                jammed: false,
             }
         }
     }

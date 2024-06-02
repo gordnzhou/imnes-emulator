@@ -78,7 +78,7 @@ impl App {
                     ui_want_text_input = ui.io().want_text_input;
 
                     let now = std::time::Instant::now();
-                    emulator.run_for_duration(now - last_emulation);
+                    emulator.run_for_duration(now - last_emulation, &mut logger);
                     last_emulation = now;
 
                     emulator.draw_screen(&mut display, &mut renderer, ui);
