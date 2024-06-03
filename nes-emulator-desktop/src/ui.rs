@@ -1,12 +1,13 @@
-use std::{borrow::Cow, rc::Rc};
+use std::{borrow::Cow, env, rc::Rc};
 
 use imgui::{Image, TabItem, TextureId, Ui};
 use glium::{texture::RawImage2d, uniforms, Display, Texture2d};
 use glutin::surface::WindowSurface;
 use imgui_glium_renderer::{Renderer, Texture};
-use nesemulib::{PATTERN_TABLE_LENGTH, PATTERN_TABLE_W_H};
+use native_dialog::FileDialog;
 
-use crate::{emulator::{Emulator, DEFAULT_SAMPLE_RATE}, logger::Logger};
+use nesemulib::{PATTERN_TABLE_LENGTH, PATTERN_TABLE_W_H};
+use crate::{emulator::Emulator, logger::Logger};
 
 
 pub struct EmulatorUi {
@@ -16,8 +17,6 @@ pub struct EmulatorUi {
 
     pattern_table_frame: PixelFrame,
     selected_palette: usize,
-
-    new_sample_rate: u32,
 }
 
 impl EmulatorUi {
@@ -29,8 +28,6 @@ impl EmulatorUi {
 
             pattern_table_frame: PixelFrame::new(2 * PATTERN_TABLE_W_H as u32, PATTERN_TABLE_W_H as u32, renderer, display),
             selected_palette: 0,
-
-            new_sample_rate: DEFAULT_SAMPLE_RATE,
         }
     }
 
@@ -73,6 +70,10 @@ impl EmulatorUi {
                     ui.combo("##combo", &mut rm.selected_file, &rm.file_names, |i| {
                         Cow::Borrowed(i)
                     });
+                    ui.same_line();
+                    if ui.button("Refresh...") {
+                        rm.refresh_file_names();
+                    }
 
                     if ui.button("Load Selected File") {
                         file_name = Some(format!("{}{}", rm.roms_folder, &rm.file_names[rm.selected_file]));  
@@ -321,23 +322,49 @@ impl EmulatorUi {
                     .build(|| {
                         if let Some(_) = ui.tab_bar("Settings Tab") {  
                             TabItem::new("General").build(ui, || {
+                                let v_space = ui.push_style_var(imgui::StyleVar::ItemSpacing([10.0, 30.0]));
+
+                                let mut new_sample_rate = emulator.audio_player.get_sample_rate();
+
+                                ui.input_scalar("Audio Sample Rate", &mut new_sample_rate).build();
+                                ui.same_line();
+                                if ui.button("Apply") && new_sample_rate > 0 {
+                                    emulator.adjust_sample_rate(new_sample_rate, logger);
+                                }
+
                                 ui.checkbox("Enable Autosave", &mut emulator.rom_manager.auto_save);
 
-                                ui.input_scalar("Audio Sample Rate", &mut self.new_sample_rate).build();
+                                ui.text(format!("Current ROMs Folder: {}", emulator.rom_manager.roms_folder));
+                                ui.same_line();
+                                if ui.button("Change...") {
+                                    match FileDialog::new().show_open_single_dir() {
+                                        Ok(Some(selected_path)) => {
 
-                                if ui.is_item_deactivated_after_edit() && self.new_sample_rate > 0 {
-                                    emulator.adjust_sample_rate(self.new_sample_rate, logger);
+                                            let mut rom_folder = selected_path.to_string_lossy().into_owned();
+
+                                            if let Ok(current_folder) = env::current_dir() {  
+                                                if let Ok(folder) = selected_path.strip_prefix(current_folder) {
+                                                    rom_folder = folder.to_string_lossy().into_owned()
+                                                }
+                                            }
+
+                                            emulator.rom_manager.roms_folder = format!("{}/", rom_folder);
+                                            emulator.rom_manager.refresh_file_names();
+                                        }
+                                        Ok(None) => {}
+                                        Err(e) => eprintln!("Error: {}", e),
+                                    }
                                 }
+
+                                v_space.pop();
                             });
 
                             TabItem::new("Controls").build(ui, || {
                                 emulator.joypad.show_key_settings(ui);
                                 if ui.button("Reset Keys to Default") {
                                     emulator.joypad.reset_keys();
+                                    emulator.reset_sample_rate();
                                     emulator.rom_manager.auto_save = true;
-
-                                    emulator.adjust_sample_rate(DEFAULT_SAMPLE_RATE, logger);
-                                    self.new_sample_rate = DEFAULT_SAMPLE_RATE;
                                 }
                             });
                         };

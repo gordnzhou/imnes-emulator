@@ -4,6 +4,8 @@ use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, BuildStreamError, Devi
 
 const AUDIO_SAMPLES: usize = 512;
 
+const DEFAULT_SAMPLE_RATE: u32 = 48000;
+
 pub struct AudioPlayer {
     stream: Stream,
     device: Device,
@@ -11,15 +13,16 @@ pub struct AudioPlayer {
     audio_buffer: [f32; AUDIO_SAMPLES],
     buffer_index: usize,
     pub master_volume: f32,
-    pub sample_rate: u32,
+    
+    sample_rate: u32,
 }
 
 impl AudioPlayer {
-    pub fn new(sample_rate: u32) -> Self {
+    pub fn new() -> Self {
         let host = cpal::default_host();
         let device = host.default_output_device().expect("Failed to get default output device");
 
-        let mut sample_rate = sample_rate;
+        let mut sample_rate = DEFAULT_SAMPLE_RATE;
 
         if let Ok(ocs) = device.supported_output_configs() {
 
@@ -57,6 +60,10 @@ impl AudioPlayer {
         }
     }
 
+    pub fn reset_sample_rate(&mut self) -> Result<(), BuildStreamError>  {
+        self.adjust_sample_rate(DEFAULT_SAMPLE_RATE)
+    }
+
     pub fn adjust_sample_rate(&mut self, sample_rate: u32) -> Result<(), BuildStreamError> {
         self.stream.pause().expect("Failed to pause stream");
     
@@ -77,7 +84,7 @@ impl AudioPlayer {
         let config = StreamConfig {
             channels: 1,
             sample_rate: SampleRate(sample_rate),
-            buffer_size: cpal::BufferSize::Fixed(AUDIO_SAMPLES as u32),
+            buffer_size: cpal::BufferSize::Default,
         };
 
         device.build_output_stream(
@@ -108,5 +115,9 @@ impl AudioPlayer {
             let _ = self.audio_tx.try_send(self.audio_buffer);
             self.buffer_index = 0;
         }
+    }
+
+    pub fn get_sample_rate(&self) -> u32 {
+        self.sample_rate
     }
 }

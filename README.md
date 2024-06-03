@@ -12,7 +12,7 @@ A NES emulator built using Rust which includes a debugging UI for desktop using 
 ## Desktop Application Setup 
 Before starting, make sure you have [Rust](https://www.rust-lang.org/tools/install) installed and make sure the version is at least **1.79.0-nightly**. 
 
-- Add ROMs to the `/roms` folder. Save data will be automatically placed in the `/saves` folder with the same name as its ROM file and a `.sav` extension.
+- Add ROMs to the `/roms` folder. By default, save data will be automatically placed in the `/saves` folder with the same name as its ROM file, with a `.sav` extension.
 
 - To run the application:
 ```

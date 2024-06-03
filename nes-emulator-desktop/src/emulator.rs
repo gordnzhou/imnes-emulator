@@ -17,8 +17,6 @@ use crate::{logger::Logger, rom::RomManager};
 use self::{audio::AudioPlayer, joypad::Joypad};
 pub use screen::Screen;
 
-pub const DEFAULT_SAMPLE_RATE: u32 = 48000;
-
 pub struct Emulator {
     pub cpu: Cpu6502,
     pub ppu: Ppu2C03,
@@ -34,8 +32,8 @@ pub struct Emulator {
 
 impl Emulator {
     pub fn new(screen: Screen) -> Self {
-        let audio_player = AudioPlayer::new(DEFAULT_SAMPLE_RATE);
-        let apu = Apu2A03::new(audio_player.sample_rate);
+        let audio_player = AudioPlayer::new();
+        let apu = Apu2A03::new(audio_player.get_sample_rate());
 
         Self {
             cpu: Cpu6502::new(apu),
@@ -63,6 +61,13 @@ impl Emulator {
         match self.audio_player.adjust_sample_rate(sample_rate) {
             Ok(()) => self.cpu.apu.adjust_sample_rate(sample_rate),
             Err(e) => logger.log_error(&format!("Unable to change audio sample rate to {}: {}", sample_rate, e))
+        }
+    }
+
+    pub fn reset_sample_rate(&mut self) {
+        match self.audio_player.reset_sample_rate() {
+            Ok(()) => self.cpu.apu.adjust_sample_rate(self.audio_player.get_sample_rate()),
+            Err(e) => eprintln!("Unable to set sample rate to default! {}", e)
         }
     }
 

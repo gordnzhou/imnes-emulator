@@ -11,11 +11,13 @@ const ROMS_FOLDER: &str = "roms/";
 /// Handles ROM state in emulation, and saving + loading
 pub struct RomManager {
     pub auto_save: bool,
+
     pub bus: Option<SystemBus>,
     pub cartridge_name: Option<String>,
+
     pub selected_file: usize,
     pub file_names: Vec<String>,
-    save_folder: String,
+    pub save_folder: String,
     pub roms_folder: String,
 }
 
@@ -53,6 +55,16 @@ impl RomManager {
 
         self.bus = None;
         self.cartridge_name = None;
+    }
+
+    pub fn refresh_file_names(&mut self) {
+        self.file_names = fs::read_dir(&self.roms_folder).unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().unwrap().is_file())
+            .map(|e| e.file_name().into_string().unwrap())
+            .collect();
+        
+        self.file_names.sort(); 
     }
 
     pub fn load_ines_cartridge(&mut self, file_name: &str, logger: &mut Logger) -> Result<(), io::Error> {

@@ -46,10 +46,11 @@ impl App {
         let mut ui_want_text_input = false;
 
         let mut logger = Logger::new();
-        let mut emulator_ui = EmulatorUi::new(&mut renderer, &mut display);
-        let mut emulator = Emulator::new(screen);
 
+        let mut emulator = Emulator::new(screen);
         emulator.reset();
+
+        let mut emulator_ui = EmulatorUi::new(&mut renderer, &mut display);
         
         let mut last_frame = std::time::Instant::now();
         let mut last_emulation = std::time::Instant::now();
