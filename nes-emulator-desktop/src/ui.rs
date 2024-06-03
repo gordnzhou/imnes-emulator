@@ -39,7 +39,7 @@ impl EmulatorUi {
 
         self.rom_window(ui, logger, emulator);
 
-        self.main_menu(emulator, ui, logger);
+        self.main_menu(emulator, ui);
     }
 
     fn emulation_state_windows(&mut self, ui: &Ui, emulator: &mut Emulator, renderer: &mut Renderer, display: &mut Display<WindowSurface>) {
@@ -121,7 +121,7 @@ impl EmulatorUi {
                         ui.label_text(format!("{}", value), format!("{}:", name));
                     };
 
-                    if let Some(_) = ui.tab_bar("Settings Tab") {  
+                    if let Some(_) = ui.tab_bar("PPU State Tab") {  
                         TabItem::new("Registers").build(ui, || {
 
                             register_label("PPU Scanline", &ppu.scanline);
@@ -289,7 +289,7 @@ impl EmulatorUi {
             });
     }
 
-    pub fn main_menu(&mut self, emulator: &mut Emulator, ui: &Ui, logger: &mut Logger) {
+    pub fn main_menu(&mut self, emulator: &mut Emulator, ui: &Ui) {
         ui.main_menu_bar(|| {
             if ui.menu_item("Settings") {
                 ui.open_popup("Settings");
@@ -310,11 +310,11 @@ impl EmulatorUi {
                 }          
             });
 
-            self.settings_popup(emulator, ui, logger);
+            self.settings_popup(emulator, ui);
         });
     }
 
-    fn settings_popup(&mut self, emulator: &mut Emulator, ui: &Ui, logger: &mut Logger) {
+    fn settings_popup(&mut self, emulator: &mut Emulator, ui: &Ui) {
         ui.modal_popup_config("Settings")
             .build(|| {
                 ui.child_window("Settings Child")
@@ -323,14 +323,6 @@ impl EmulatorUi {
                         if let Some(_) = ui.tab_bar("Settings Tab") {  
                             TabItem::new("General").build(ui, || {
                                 let v_space = ui.push_style_var(imgui::StyleVar::ItemSpacing([10.0, 30.0]));
-
-                                let mut new_sample_rate = emulator.audio_player.get_sample_rate();
-
-                                ui.input_scalar("Audio Sample Rate", &mut new_sample_rate).build();
-                                ui.same_line();
-                                if ui.button("Apply") && new_sample_rate > 0 {
-                                    emulator.adjust_sample_rate(new_sample_rate, logger);
-                                }
 
                                 ui.checkbox("Enable Autosave", &mut emulator.rom_manager.auto_save);
 
@@ -355,6 +347,14 @@ impl EmulatorUi {
                                         Err(e) => eprintln!("Error: {}", e),
                                     }
                                 }
+                                
+                                ui.text(format!("AUDIO DETAILS\nSample Rate: {}Hz\nBuffer Size: {}", 
+                                    emulator.audio_player.sample_rate, 
+                                    if let Some(bs) = emulator.audio_player.buffer_size {
+                                        bs.to_string()
+                                    } else {
+                                        String::from("Non-Fixed")
+                                    }));
 
                                 v_space.pop();
                             });
@@ -363,7 +363,6 @@ impl EmulatorUi {
                                 emulator.joypad.show_key_settings(ui);
                                 if ui.button("Reset Keys to Default") {
                                     emulator.joypad.reset_keys();
-                                    emulator.reset_sample_rate();
                                     emulator.rom_manager.auto_save = true;
                                 }
                             });

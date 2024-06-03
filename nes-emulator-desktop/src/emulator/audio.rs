@@ -1,123 +1,70 @@
-use std::sync::mpsc::{Receiver, SyncSender};
+use ringbuf::RingBuffer;
 
-use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, BuildStreamError, Device, SampleRate, Stream, StreamConfig};
-
-const AUDIO_SAMPLES: usize = 512;
-
-const DEFAULT_SAMPLE_RATE: u32 = 48000;
+use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, Stream};
 
 pub struct AudioPlayer {
-    stream: Stream,
-    device: Device,
-    audio_tx: SyncSender<[f32; AUDIO_SAMPLES]>,
-    audio_buffer: [f32; AUDIO_SAMPLES],
-    buffer_index: usize,
+    _stream: Stream,
+    ring_buffer: ringbuf::Producer<f32>,
+
     pub master_volume: f32,
-    
-    sample_rate: u32,
+
+    pub sample_rate: u32,
+    pub buffer_size: Option<u32>,
 }
 
 impl AudioPlayer {
     pub fn new() -> Self {
         let host = cpal::default_host();
         let device = host.default_output_device().expect("Failed to get default output device");
+        let default_config = device.default_output_config().unwrap();
 
-        let mut sample_rate = DEFAULT_SAMPLE_RATE;
+        let buffer_size = match default_config.buffer_size() {
+            cpal::SupportedBufferSize::Range { min, max: _ } => cpal::BufferSize::Fixed(*min),
+            _ => cpal::BufferSize::Default,
+        };
 
-        if let Ok(ocs) = device.supported_output_configs() {
+        let length = match buffer_size {
+            cpal::BufferSize::Fixed(size) => Some(size),
+            _ => None,
+        };
 
-            let mut new_sample_rate = None;
+        let sample_rate = default_config.sample_rate();
+        
+        let config = cpal::StreamConfig {
+            channels: 1,
+            sample_rate,
+            buffer_size,
+        };
 
-            for output_config in ocs {
-                let min_sr = output_config.min_sample_rate().0;
-                let max_sr = output_config.max_sample_rate().0;
-                if min_sr <= sample_rate && max_sr <= sample_rate {
-                    break
-                } else {
-                    new_sample_rate = Some((min_sr + max_sr) / 2);
+        let ring_buffer = RingBuffer::new(1024);
+        let (producer, mut consumer) = ring_buffer.split();
+
+        let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
+
+        let stream = device.build_output_stream(
+            &config.into(), 
+            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                for sample in data.iter_mut() {
+                    *sample = consumer.pop().unwrap_or(0.0);
                 }
-            }
-
-            if let Some(new_sample_rate) = new_sample_rate {
-                println!("Unable to use default sample rate of {}, using {} instead", sample_rate, new_sample_rate);
-                sample_rate = new_sample_rate;
-            };
-        }
-
-        let (audio_tx, audio_rx) = std::sync::mpsc::sync_channel::<[f32; AUDIO_SAMPLES]>(4);
-        let stream = Self::build_audio_stream(audio_rx, &device, sample_rate).expect("Failed to build initial audio stream");
+            },
+            err_fn, 
+            None
+        ).unwrap();
 
         stream.play().expect("Failed to start stream");
         
         Self {
-            stream,
-            device,
-            audio_tx,
-            audio_buffer: [0.0; AUDIO_SAMPLES],
-            buffer_index: 0,
+            _stream: stream,
+            ring_buffer: producer,
+
             master_volume: 0.5,
-            sample_rate
+            sample_rate: sample_rate.0,
+            buffer_size: length,
         }
-    }
-
-    pub fn reset_sample_rate(&mut self) -> Result<(), BuildStreamError>  {
-        self.adjust_sample_rate(DEFAULT_SAMPLE_RATE)
-    }
-
-    pub fn adjust_sample_rate(&mut self, sample_rate: u32) -> Result<(), BuildStreamError> {
-        self.stream.pause().expect("Failed to pause stream");
-    
-        let (audio_tx, audio_rx) = std::sync::mpsc::sync_channel::<[f32; AUDIO_SAMPLES]>(4);
-
-        let stream = Self::build_audio_stream(audio_rx, &self.device, sample_rate)?;
-    
-        self.stream.play().expect("Failed to start stream");
-
-        self.stream = stream;
-        self.audio_tx = audio_tx;
-        self.sample_rate = sample_rate;
-
-        Ok(())
-    }
-
-    fn build_audio_stream(audio_rx: Receiver<[f32; AUDIO_SAMPLES]>, device: &Device, sample_rate: u32) -> Result<Stream, BuildStreamError> { 
-        let config = StreamConfig {
-            channels: 1,
-            sample_rate: SampleRate(sample_rate),
-            buffer_size: cpal::BufferSize::Default,
-        };
-
-        device.build_output_stream(
-            &config,
-            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                match audio_rx.try_recv() {
-                    Ok(buffer) => {
-                        let len = data.len().min(buffer.len());
-                        data[0..len].copy_from_slice(&buffer[0..len]);
-                    }
-                    Err(_) => {
-                        for i in 0..data.len() {
-                            data[i] = 0.0;
-                        }
-                    }
-                } 
-            },
-            |err| eprintln!("an error occurred on stream: {}", err),
-            None
-        )
     }
 
     pub fn send_sample(&mut self, sample: f32) {
-        self.audio_buffer[self.buffer_index] = sample * self.master_volume;
-        self.buffer_index += 1;
-
-        if self.buffer_index == AUDIO_SAMPLES {
-            let _ = self.audio_tx.try_send(self.audio_buffer);
-            self.buffer_index = 0;
-        }
-    }
-
-    pub fn get_sample_rate(&self) -> u32 {
-        self.sample_rate
+        let _ = self.ring_buffer.push(sample);
     }
 }
