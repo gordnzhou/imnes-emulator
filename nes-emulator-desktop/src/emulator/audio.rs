@@ -1,15 +1,23 @@
-use ringbuf::RingBuffer;
+use std::sync::{mpsc::SyncSender, Arc, Mutex};
+use cpal::{
+    traits::{DeviceTrait, HostTrait, StreamTrait}, 
+    SampleRate, 
+    Stream, 
+    StreamConfig
+};
 
-use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, Stream};
+const DEFAULT_BUFFER_SIZE: usize = 512;
 
 pub struct AudioPlayer {
     _stream: Stream,
-    ring_buffer: ringbuf::Producer<f32>,
+    audio_tx: SyncSender<Vec<f32>>,
+    audio_buffer: Vec<f32>,
+    callback_data_len: Arc<Mutex<usize>>,
+    buffer_index: usize,
 
     pub master_volume: f32,
-
-    pub sample_rate: u32,
-    pub buffer_size: Option<u32>,
+    sample_rate: u32,
+    buffer_size: usize,
 }
 
 impl AudioPlayer {
@@ -18,53 +26,74 @@ impl AudioPlayer {
         let device = host.default_output_device().expect("Failed to get default output device");
         let default_config = device.default_output_config().unwrap();
 
-        let buffer_size = match default_config.buffer_size() {
-            cpal::SupportedBufferSize::Range { min, max: _ } => cpal::BufferSize::Fixed(*min),
-            _ => cpal::BufferSize::Default,
-        };
+        let sample_rate = default_config.sample_rate().0;
 
-        let length = match buffer_size {
-            cpal::BufferSize::Fixed(size) => Some(size),
-            _ => None,
-        };
+        let callback_data_len = Arc::new(Mutex::new(DEFAULT_BUFFER_SIZE));
+        let callback_data_len_clone = Arc::clone(&callback_data_len);
 
-        let sample_rate = default_config.sample_rate();
+        let (audio_tx, audio_rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(4);
         
-        let config = cpal::StreamConfig {
+        let config = StreamConfig {
             channels: 1,
-            sample_rate,
-            buffer_size,
+            sample_rate: SampleRate(sample_rate),
+            buffer_size: cpal::BufferSize::Default,
         };
-
-        let ring_buffer = RingBuffer::new(1024);
-        let (producer, mut consumer) = ring_buffer.split();
-
-        let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
 
         let stream = device.build_output_stream(
-            &config.into(), 
+            &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                for sample in data.iter_mut() {
-                    *sample = consumer.pop().unwrap_or(0.0);
-                }
+                match audio_rx.try_recv() {
+                    Ok(buffer) => {
+                        *callback_data_len_clone.lock().unwrap() = data.len();
+
+                        let len = data.len().min(buffer.len());
+                        data[0..len].copy_from_slice(&buffer[0..len]);
+                    }
+                    Err(_) => {
+                        for i in 0..data.len() {
+                            data[i] = 0.0;
+                        }
+                    }
+                } 
             },
-            err_fn, 
+            |err| eprintln!("an error occurred on stream: {}", err),
             None
-        ).unwrap();
+        ).expect("Failed to build audio stream");
 
         stream.play().expect("Failed to start stream");
         
         Self {
             _stream: stream,
-            ring_buffer: producer,
-
+            audio_tx,
+            audio_buffer: vec![0.0; DEFAULT_BUFFER_SIZE],
+            buffer_index: 0,
+            buffer_size: DEFAULT_BUFFER_SIZE,
+            
             master_volume: 0.5,
-            sample_rate: sample_rate.0,
-            buffer_size: length,
+            sample_rate,
+            callback_data_len,
         }
     }
 
     pub fn send_sample(&mut self, sample: f32) {
-        let _ = self.ring_buffer.push(sample);
+        self.audio_buffer[self.buffer_index] = sample * self.master_volume;
+        self.buffer_index += 1;
+
+        if self.buffer_index == self.buffer_size {
+            let _ = self.audio_tx.try_send(self.audio_buffer.clone());
+
+            // Adjust buffer size to match the length of the callback's output
+            self.buffer_index = 0;
+            self.buffer_size = *self.callback_data_len.lock().unwrap();
+            self.audio_buffer.resize(self.buffer_size, 0.0);
+        }
+    }
+
+    pub fn get_sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    pub fn get_buffer_size(&self) -> usize {
+        self.buffer_size
     }
 }

@@ -13,8 +13,6 @@ const STACK_END: u16 = 0x1FF;
 const APU_REG_START: usize = 0x4000;
 const APU_REG_END: usize = 0x4013;
 
-const ILLEGAL_OPCODES_ENABLED: bool = true;
-
 bitflags! {
     struct StatusFlag: u8 {
         const C = 0b00000001;
@@ -45,7 +43,8 @@ pub struct Cpu6502 {
 
     cycles: u32,
     pub total_cycles: u64,
-    pub jammed: bool
+    pub jammed: bool,
+    pub skip_illegal_opcodes: bool,
 }
 
 impl Cpu6502 {
@@ -66,7 +65,8 @@ impl Cpu6502 {
 
             cycles: 0,
             total_cycles: 0,
-            jammed: false
+            jammed: false,
+            skip_illegal_opcodes: false,
         }
     }
 
@@ -85,20 +85,12 @@ impl Cpu6502 {
 
         self.cycles += match OPCODES_LOOKUP[opcode as usize] {
             Some(op) => {
-                if op.illegal && !ILLEGAL_OPCODES_ENABLED {
-                    panic!("Illegal Opcode: {:02x}", opcode);
+                if op.illegal && self.skip_illegal_opcodes {
+                    // skip execution of this instruction
+                    op.cycles
+                } else {
+                    op.execute_op(self, bus)
                 }
-
-                // log_to_file(&format!("{:04X} OPCODE:{:?} IMM:{:02X}     A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}  CYC:{}", 
-                //     self.program_counter - 1, op.instr, self.read_byte(bus, self.program_counter), 
-                //     self.accumulator, self.x_index_reg, self.y_index_reg, self.processor_status, self.stack_pointer,
-                //     self.total_cycles)).unwrap();
-
-                // log_to_file(&format!("A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} CYC:{}", 
-                //     self.accumulator, self.x_index_reg, self.y_index_reg, self.processor_status, self.stack_pointer,
-                //     self.total_cycles)).unwrap();
-
-                op.execute_op(self, bus)
             },
             None => panic!("Unrecognized/Unsupported Opcode: {:02x}", opcode)
         };
@@ -1051,10 +1043,6 @@ impl Cpu6502 {
 
             match OPCODES_LOOKUP[opcode as usize] {
                 Some(op) => {
-                    if op.illegal && !ILLEGAL_OPCODES_ENABLED {
-                        panic!("Illegal Opcode: {:02x}", opcode);
-                    }
-
                     let byte_lo =  self.peek_byte(bus, address.wrapping_add(1)) as u16;
                     let byte_hi = self.peek_byte(bus, address.wrapping_add(2)) as u16;
 
@@ -1177,6 +1165,7 @@ mod tests {
                 cycles: 0,
                 total_cycles: 0,
                 jammed: false,
+                skip_illegal_opcodes: false,
             }
         }
     }

@@ -86,6 +86,10 @@ impl RomManager {
 
         if let Some(bus) = &mut self.bus {
 
+            if !bus.cartridge.battery_backed {
+                return;
+            }
+
             match fs::read(&save_path) {
                 Ok(save_ram) => if let Err(e) = bus.cartridge.load_save_ram(save_ram) {
                     logger.log_event(&format!("Unable to load save RAM for {}:\n{}", file_name, e));
@@ -110,7 +114,12 @@ impl RomManager {
 
         if let Some(bus) = &mut self.bus {
 
+            if !bus.cartridge.battery_backed {
+                return;
+            }
+
             if let Some(ram) = bus.cartridge.get_save_ram() {
+                
                 if let Err(e) = fs::write(save_path.clone(), ram) {
                     logger.log_error(&format!("Failed to save RAM to {}:\n{}", save_path, e));
                 } else {

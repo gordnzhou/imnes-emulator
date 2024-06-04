@@ -52,17 +52,11 @@ impl App {
 
         let mut emulator_ui = EmulatorUi::new(&mut renderer, &mut display);
         
-        let mut last_frame = std::time::Instant::now();
         let mut last_emulation = std::time::Instant::now();
         let mut last_save = std::time::Instant::now();
 
         event_loop.run(move |event, window_target| {
             match event {
-                Event::NewEvents(_) => {
-                    let now = std::time::Instant::now();
-                    imgui_context.io_mut().update_delta_time(now - last_frame);
-                    last_frame = now;
-                }
                 Event::AboutToWait => {
                     winit_platform
                         .prepare_frame(imgui_context.io_mut(), &window)
@@ -82,11 +76,11 @@ impl App {
                     emulator.run_for_duration(now - last_emulation, &mut logger);
                     last_emulation = now;
 
-                    emulator.draw_screen(&mut display, &mut renderer, ui);
+                    emulator.draw_screen(&mut renderer, ui);
 
                     logger.display_event_log(ui);
 
-                    emulator_ui.render_emulation(&mut emulator, ui, &mut logger, &mut display, &mut renderer);
+                    emulator_ui.render_emulation(&mut emulator, ui, &mut logger, &mut renderer);
                     
                     let now = std::time::Instant::now();
                     if now - last_save >= std::time::Duration::new(60, 0) {

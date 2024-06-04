@@ -36,7 +36,7 @@ impl Screen {
         }
     }
 
-    pub fn draw(&mut self, colours: Option<&[Colour; DISPLAY_WIDTH * DISPLAY_HEIGHT]>, display: &mut Display<WindowSurface>, renderer: &mut Renderer, ui: &Ui, name: &Option<String>) {
+    pub fn draw(&mut self, colours: Option<&[Colour; DISPLAY_WIDTH * DISPLAY_HEIGHT]>, renderer: &mut Renderer, ui: &Ui, name: &Option<String>) {
         if let Some(colours) = colours {
             let mut frame = [0xFF; FRAME_LENGTH];
 
@@ -47,7 +47,7 @@ impl Screen {
             }
             
             self.total_frames += 1;
-            self.screen_frame.update_frame(frame.to_vec(), display, renderer);
+            self.screen_frame.update_frame(frame.to_vec(),renderer);
         }
 
         if Instant::now() - self.last_frame_update >= Duration::from_secs(1) {
@@ -74,8 +74,8 @@ impl Screen {
             });
     }
 
-    pub fn clear_screen(&mut self, display: &mut Display<WindowSurface>, renderer: &mut Renderer) {
-        self.screen_frame.update_frame(vec![0; FRAME_LENGTH], display, renderer);
+    pub fn clear_screen(&mut self, renderer: &mut Renderer) {
+        self.screen_frame.update_frame(vec![0; FRAME_LENGTH], renderer);
     }
 
     pub fn reset(&mut self) {

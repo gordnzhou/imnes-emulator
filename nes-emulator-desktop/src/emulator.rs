@@ -4,8 +4,6 @@ mod joypad;
 
 use std::{io, time::Duration};
 
-use glium::Display;
-use glutin::surface::WindowSurface;
 use imgui::Ui;
 use imgui_glium_renderer::Renderer;
 use winit::{event::ElementState, keyboard::PhysicalKey};
@@ -33,7 +31,7 @@ pub struct Emulator {
 impl Emulator {
     pub fn new(screen: Screen) -> Self {
         let audio_player = AudioPlayer::new();
-        let apu = Apu2A03::new(audio_player.sample_rate);
+        let apu = Apu2A03::new(audio_player.get_sample_rate());
 
         Self {
             cpu: Cpu6502::new(apu),
@@ -120,23 +118,25 @@ impl Emulator {
         }
     }
  
-    pub fn draw_screen(&mut self, display: &mut Display<WindowSurface>, renderer: &mut Renderer, ui: &mut Ui)  {    
-        self.screen.draw(self.ppu.try_get_frame(), display, renderer, ui, &self.rom_manager.cartridge_name)
+    pub fn draw_screen(&mut self, renderer: &mut Renderer, ui: &mut Ui)  {    
+        self.screen.draw(self.ppu.try_get_frame(), renderer, ui, &self.rom_manager.cartridge_name)
     }
 
     pub fn update_joypad(&mut self, physical_key: PhysicalKey, state: ElementState) {
         if let Some(bus) = &mut self.rom_manager.bus {
 
             if self.joypad.update_joypad(physical_key, state) {
-                bus.update_joypad_state(self.joypad.key_state, 0);
+
+                // future TODO: add support for second joypad
+                bus.update_joypad_state(self.joypad.get_key_state(), 0);
             }
         } else {
             let _ = self.joypad.update_joypad(physical_key, state);
         }
     }
 
-    pub fn stop_emulation(&mut self, logger: &mut Logger, display: &mut Display<WindowSurface>, renderer: &mut Renderer) {
+    pub fn stop_emulation(&mut self, logger: &mut Logger, renderer: &mut Renderer) {
         self.unload_cartridge(logger);
-        self.screen.clear_screen(display, renderer);
+        self.screen.clear_screen(renderer);
     }
 }

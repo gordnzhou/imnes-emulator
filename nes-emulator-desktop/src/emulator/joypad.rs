@@ -1,46 +1,44 @@
 use imgui::Ui;
 use winit::{event::ElementState, keyboard::{KeyCode, PhysicalKey}};
 
-// extract default keys to consts
-const DEFAULT_RIGHT_KEY: KeyCode = KeyCode::KeyD;
-const DEFAULT_LEFT_KEY: KeyCode = KeyCode::KeyA;
-const DEFAULT_DOWN_KEY: KeyCode = KeyCode::KeyS;
-const DEFAULT_UP_KEY: KeyCode = KeyCode::KeyW;
-const DEFAULT_START_KEY: KeyCode = KeyCode::KeyI;
-const DEFAULT_SELECT_KEY: KeyCode = KeyCode::KeyJ;
-const DEFAULT_A_KEY: KeyCode = KeyCode::KeyK;
-const DEFAULT_B_KEY: KeyCode = KeyCode::KeyL;
+const DEFAULT_RIGHT_KEY: KeyCode = KeyCode::ArrowRight;
+const DEFAULT_LEFT_KEY: KeyCode = KeyCode::ArrowLeft;
+const DEFAULT_DOWN_KEY: KeyCode = KeyCode::ArrowDown;
+const DEFAULT_UP_KEY: KeyCode = KeyCode::ArrowUp;
+const DEFAULT_START_KEY: KeyCode = KeyCode::Enter;
+const DEFAULT_SELECT_KEY: KeyCode = KeyCode::ShiftLeft;
+const DEFAULT_A_KEY: KeyCode = KeyCode::KeyX;
+const DEFAULT_B_KEY: KeyCode = KeyCode::Space;
 
 pub struct Joypad {
     polling_key: Option<u8>,
     current_key: Option<KeyCode>,
 
-    right_key: KeyCode,
-    left_key: KeyCode,
-    down_key: KeyCode,
-    up_key: KeyCode,
-    start_key: KeyCode,
-    select_key: KeyCode,
-    a_key: KeyCode,
-    b_key: KeyCode,
+    default_key_settings: [KeySetting; 8],
+    key_settings: [KeySetting; 8],
 
-    pub key_state: u8,
+    key_state: u8,
 }
 
 impl Joypad {
     pub fn new() -> Self {
+        let default_key_settings = [
+            KeySetting { key_code: DEFAULT_RIGHT_KEY, name: String::from("Right"), bit: 0 },
+            KeySetting { key_code: DEFAULT_LEFT_KEY, name: String::from("Left"), bit: 1 },
+            KeySetting { key_code: DEFAULT_DOWN_KEY, name: String::from("Down"), bit: 2 },
+            KeySetting { key_code: DEFAULT_UP_KEY, name: String::from("Up"), bit: 3 },
+            KeySetting { key_code: DEFAULT_START_KEY, name: String::from("Start"), bit: 4 },
+            KeySetting { key_code: DEFAULT_SELECT_KEY, name: String::from("Select"), bit: 5 },
+            KeySetting { key_code: DEFAULT_A_KEY, name: String::from("A"), bit: 6 },
+            KeySetting { key_code: DEFAULT_B_KEY, name: String::from("B"), bit: 7 },
+        ];
+
         Self {
             polling_key: None,
             current_key: None,
 
-            right_key: DEFAULT_RIGHT_KEY,
-            left_key: DEFAULT_LEFT_KEY,
-            down_key: DEFAULT_DOWN_KEY,
-            up_key: DEFAULT_UP_KEY,
-            start_key: DEFAULT_START_KEY,
-            select_key: DEFAULT_SELECT_KEY,
-            a_key: DEFAULT_A_KEY,
-            b_key: DEFAULT_B_KEY,
+            key_settings: default_key_settings.clone(),
+            default_key_settings,
 
             key_state: 0,
         }
@@ -51,8 +49,7 @@ impl Joypad {
 
         // Updates the current key pressed for changing controls in settings
         self.current_key = if pressed {
-            if let PhysicalKey::Code(key) = physical_key {
-                
+            if let PhysicalKey::Code(key) = physical_key {       
                 Some(key)
             } else {
                 None
@@ -61,19 +58,15 @@ impl Joypad {
             None
         };
 
-        let mask = if let PhysicalKey::Code(key) = physical_key {
-            match key {
-                key if key == self.right_key  => 1 << 0,
-                key if key == self.left_key   => 1 << 1,
-                key if key == self.down_key   => 1 << 2,
-                key if key == self.up_key     => 1 << 3,
-                key if key == self.start_key  => 1 << 4,
-                key if key == self.select_key => 1 << 5,
-                key if key == self.a_key      => 1 << 6,
-                key if key == self.b_key      => 1 << 7,
-                _ => 0
+        let mut mask = 0;
+        if let PhysicalKey::Code(key) = physical_key {
+            for key_setting in &self.key_settings {
+                if key == key_setting.key_code {
+                    mask = 1 << key_setting.bit;
+                    break;
+                }
             }
-        } else { 0 };
+        }
 
         let old_joypad = self.key_state;
 
@@ -88,54 +81,74 @@ impl Joypad {
 
     pub fn show_key_settings(&mut self, ui: &Ui) {
 
-        let key_setting = |key_name: &str, id: u8, key: KeyCode| -> bool {
-            ui.text(format!("Current {} Key:\n{:?}", key_name, key));
+        let change_key = |key_setting: &KeySetting| -> bool {
+            ui.text(format!("Current {} Key:\n{:?}", key_setting.name, key_setting.key_code));
             ui.same_line_with_spacing(10.0, 300.0);
-            ui.button(if self.polling_key == Some(id) { 
+            ui.button(if self.polling_key == Some(key_setting.bit) { 
                 String::from("Press any Key...") 
             }  else { 
-                format!("Set {} Key", key_name)
+                format!("Set {} Key", key_setting.name)
             })
         };
 
-        self.polling_key = 
-            if key_setting("Right", 0, self.right_key) { Some(0) } 
-            else if key_setting("Left", 1, self.left_key) { Some(1) }
-            else if key_setting("Down", 2, self.down_key) { Some(2) }
-            else if key_setting("Up", 3, self.up_key) { Some(3) }
-            else if key_setting("Start", 4, self.start_key) { Some(4) }
-            else if key_setting("Select", 5, self.select_key) { Some(5) }
-            else if key_setting("A", 6, self.a_key) { Some(6) }
-            else if key_setting("B", 7, self.b_key) { Some(7) }
-            else { self.polling_key };
+        for key_setting in &self.key_settings {
+            if change_key(key_setting) {
+                self.polling_key = Some(key_setting.bit);
+                break;
+            }
+        }
 
         if let Some(current_key) = self.current_key {
-            match self.polling_key {
-                Some(0) => self.right_key = current_key,
-                Some(1) => self.left_key = current_key,
-                Some(2) => self.down_key = current_key,
-                Some(3) => self.up_key = current_key,
-                Some(4) => self.start_key = current_key,
-                Some(5) => self.select_key = current_key,
-                Some(6) => self.a_key = current_key,
-                Some(7) => self.b_key = current_key,
-                _ => {}
-            }
 
-            self.polling_key = None;
+            if let Some(polling_key) = self.polling_key {
+                
+                let mut old_key = None;
+                let mut new_key = None;
+
+                for key_setting in &mut self.key_settings {
+                    if polling_key == key_setting.bit {
+                        new_key = Some(key_setting);
+                    } else if current_key == key_setting.key_code {
+                        old_key = Some(key_setting);
+                    }
+                }
+
+                match (old_key, new_key) {
+                    (Some(old_key), Some(new_key)) => {
+                        old_key.key_code = new_key.key_code;  
+                        new_key.key_code = current_key;
+                    },
+                    (None, Some(new_key)) => new_key.key_code = current_key,
+                    _ => {}
+                }
+
+                self.polling_key = None;
+            }
         }
+
+        ui.modal_popup("Same Key Warning", || {
+            ui.text(format!("This key is already being used!"));
+            
+            if ui.button("OK") {
+                ui.close_current_popup();
+            }
+        });
     }
 
 
     pub fn reset_keys(&mut self) {
         self.key_state = 0;
-        self.right_key = DEFAULT_RIGHT_KEY;
-        self.left_key = DEFAULT_LEFT_KEY;
-        self.down_key = DEFAULT_DOWN_KEY;
-        self.up_key = DEFAULT_UP_KEY;
-        self.start_key = DEFAULT_START_KEY;
-        self.select_key = DEFAULT_SELECT_KEY;
-        self.a_key = DEFAULT_A_KEY;
-        self.b_key = DEFAULT_B_KEY;
+        self.key_settings = self.default_key_settings.clone();
     }
+
+    pub fn get_key_state(&self) -> u8 {
+        self.key_state
+    }
+}
+
+#[derive(Clone)]
+struct KeySetting {
+    name: String,
+    key_code: KeyCode,
+    bit: u8
 }

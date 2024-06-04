@@ -31,24 +31,24 @@ impl EmulatorUi {
         }
     }
 
-    pub fn render_emulation(&mut self, emulator: &mut Emulator, ui: &Ui, logger: &mut Logger, display: &mut Display<WindowSurface>, renderer: &mut Renderer) {
+    pub fn render_emulation(&mut self, emulator: &mut Emulator, ui: &Ui, logger: &mut Logger, renderer: &mut Renderer) {
         
-        self.show_options(emulator, ui, display, renderer, logger);
+        self.show_options(emulator, ui, renderer, logger);
 
-        self.emulation_state_windows(ui, emulator, renderer, display);
+        self.emulation_state_windows(ui, emulator, renderer);
 
         self.rom_window(ui, logger, emulator);
 
         self.main_menu(emulator, ui);
     }
 
-    fn emulation_state_windows(&mut self, ui: &Ui, emulator: &mut Emulator, renderer: &mut Renderer, display: &mut Display<WindowSurface>) {
+    fn emulation_state_windows(&mut self, ui: &Ui, emulator: &mut Emulator, renderer: &mut Renderer) {
         if self.apu_window {
             self.apu_state_window(ui, emulator);
         }
         
         if self.ppu_window {
-            self.ppu_state_window(ui, emulator, renderer, display);
+            self.ppu_state_window(ui, emulator, renderer);
         }
         
         if self.cpu_window {
@@ -108,7 +108,7 @@ impl EmulatorUi {
             });
     }
 
-    fn ppu_state_window(&mut self, ui: &Ui, emulator: &mut Emulator, renderer: &mut Renderer, display: &mut Display<WindowSurface>) {
+    fn ppu_state_window(&mut self, ui: &Ui, emulator: &mut Emulator, renderer: &mut Renderer) {
         ui.window("PPU State")
             .size([300.0, 350.0], imgui::Condition::FirstUseEver)
             .position([900.0, 370.0], imgui::Condition::FirstUseEver)
@@ -156,7 +156,7 @@ impl EmulatorUi {
                                 }
                             }
                             
-                            self.pattern_table_frame.update_frame(frame.to_vec(), display, renderer);
+                            self.pattern_table_frame.update_frame(frame.to_vec(), renderer);
                             self.pattern_table_frame.build(ui, 10.0);
                             
                             ui.text(format!("Viewing Palette: {}", self.selected_palette));
@@ -257,7 +257,7 @@ impl EmulatorUi {
         style.end();
     }
 
-    pub fn show_options(&self, emulator: &mut Emulator, ui: &Ui, display: &mut Display<WindowSurface>, renderer: &mut Renderer, logger: &mut Logger) {
+    pub fn show_options(&self, emulator: &mut Emulator, ui: &Ui, renderer: &mut Renderer, logger: &mut Logger) {
         ui.window("Emulation Options")
             .size([300.0, 200.0], imgui::Condition::Always)
             .position([0.0, 220.0], imgui::Condition::Always)
@@ -271,7 +271,7 @@ impl EmulatorUi {
                 }
                 ui.same_line();
                 if ui.button("Stop") {
-                    emulator.stop_emulation(logger, display, renderer);
+                    emulator.stop_emulation(logger, renderer);
                 }
 
                 ui.separator();
@@ -326,6 +326,8 @@ impl EmulatorUi {
 
                                 ui.checkbox("Enable Autosave", &mut emulator.rom_manager.auto_save);
 
+                                ui.checkbox("Skip Illegal CPU Opcodes", &mut emulator.cpu.skip_illegal_opcodes);
+
                                 ui.text(format!("Current ROMs Folder: {}", emulator.rom_manager.roms_folder));
                                 ui.same_line();
                                 if ui.button("Change...") {
@@ -349,12 +351,8 @@ impl EmulatorUi {
                                 }
                                 
                                 ui.text(format!("AUDIO DETAILS\nSample Rate: {}Hz\nBuffer Size: {}", 
-                                    emulator.audio_player.sample_rate, 
-                                    if let Some(bs) = emulator.audio_player.buffer_size {
-                                        bs.to_string()
-                                    } else {
-                                        String::from("Non-Fixed")
-                                    }));
+                                    emulator.audio_player.get_sample_rate(), 
+                                    emulator.audio_player.get_buffer_size()));
 
                                 v_space.pop();
                             });
@@ -363,7 +361,6 @@ impl EmulatorUi {
                                 emulator.joypad.show_key_settings(ui);
                                 if ui.button("Reset Keys to Default") {
                                     emulator.joypad.reset_keys();
-                                    emulator.rom_manager.auto_save = true;
                                 }
                             });
                         };
@@ -376,6 +373,8 @@ impl EmulatorUi {
                 ui.same_line_with_spacing(10.0, 80.0);
                 if ui.button("Reset All Settings to Default") {
                     emulator.joypad.reset_keys();
+                    emulator.rom_manager.auto_save = true;
+                    emulator.cpu.skip_illegal_opcodes = false;
                 }
             });
     }
@@ -383,6 +382,7 @@ impl EmulatorUi {
 
 
 pub struct PixelFrame {
+    texture: Rc<Texture2d>,
     texture_id: TextureId,
     sampler: uniforms::SamplerBehavior,
     width: u32,
@@ -403,6 +403,7 @@ impl PixelFrame {
         let texture_id = renderer.textures().insert(Texture { texture: Rc::clone(&texture), sampler });
 
         Self {
+            texture,
             texture_id,
             sampler,
             width,
@@ -427,9 +428,16 @@ impl PixelFrame {
             .build(&ui);
     }
 
-    pub fn update_frame(&mut self, frame: Vec<u8>, display: &mut Display<WindowSurface>, renderer: &mut Renderer) {
+    pub fn update_frame(&mut self, frame: Vec<u8>, renderer: &mut Renderer) {
         let image = RawImage2d::from_raw_rgba(frame, (self.width, self.height));
-        let new_texture = Rc::new(Texture2d::new(display, image).unwrap());
-        renderer.textures().replace(self.texture_id, Texture { texture: new_texture, sampler: self.sampler });
+
+        self.texture.write(glium::Rect {
+            left: 0,
+            bottom: 0,
+            width: self.width,
+            height: self.height,
+        }, image);
+
+        renderer.textures().replace(self.texture_id, Texture { texture: Rc::clone(&self.texture), sampler: self.sampler });
     }
 }
