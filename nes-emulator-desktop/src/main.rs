@@ -6,7 +6,7 @@ mod ui;
 
 use app::App;
 
-const TITLE: &str = "NES EMULATOR";
+const TITLE: &str = "ImNES Emulator";
 const WINDOW_WIDTH: u32 = 1200;
 const WINDOW_HEIGHT: u32 = 800;
 

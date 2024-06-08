@@ -8,7 +8,7 @@ const DEFAULT_UP_KEY: KeyCode = KeyCode::ArrowUp;
 const DEFAULT_START_KEY: KeyCode = KeyCode::Enter;
 const DEFAULT_SELECT_KEY: KeyCode = KeyCode::ShiftLeft;
 const DEFAULT_A_KEY: KeyCode = KeyCode::KeyX;
-const DEFAULT_B_KEY: KeyCode = KeyCode::Space;
+const DEFAULT_B_KEY: KeyCode = KeyCode::KeyZ;
 
 pub struct Joypad {
     polling_key: Option<u8>,
@@ -44,6 +44,7 @@ impl Joypad {
         }
     }
 
+    /// Returns true if key state was changed
     pub fn update_joypad(&mut self, physical_key: PhysicalKey, state: ElementState) -> bool {
         let pressed = matches!(state, ElementState::Pressed);
 
@@ -125,14 +126,6 @@ impl Joypad {
                 self.polling_key = None;
             }
         }
-
-        ui.modal_popup("Same Key Warning", || {
-            ui.text(format!("This key is already being used!"));
-            
-            if ui.button("OK") {
-                ui.close_current_popup();
-            }
-        });
     }
 
 

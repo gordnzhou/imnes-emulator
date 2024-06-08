@@ -36,7 +36,7 @@ fn main() -> Result<(), String> {
     let window_width = (DISPLAY_WIDTH as u32) * SCREEN_SCALE;
     let window_height = (DISPLAY_HEIGHT as u32) * SCREEN_SCALE;
     let window = video_subsystem
-        .window("NES Emulator", window_width, window_height)
+        .window("ImNES Emulator", window_width, window_height)
         .position_centered()
         .opengl()
         .build()

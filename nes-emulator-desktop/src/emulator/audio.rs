@@ -82,7 +82,7 @@ impl AudioPlayer {
         if self.buffer_index == self.buffer_size {
             let _ = self.audio_tx.try_send(self.audio_buffer.clone());
 
-            // Adjust buffer size to match the length of the callback's output
+            // Adjust buffer size to match the length of the previous callback's data
             self.buffer_index = 0;
             self.buffer_size = *self.callback_data_len.lock().unwrap();
             self.audio_buffer.resize(self.buffer_size, 0.0);
