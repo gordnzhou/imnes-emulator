@@ -2,8 +2,8 @@ Cargo.lock
 /target
 nesemulib/Cargo.lock
 nesemulib/target
-nes-emulator-desktop/Cargo.lock
-nes-emulator-desktop/target
+imnes-desktop/Cargo.lock
+imnes-desktop/target
 /.vscode
 /DS_Store
 /logs

@@ -30,7 +30,7 @@ Before starting, make sure you have [Rust](https://www.rust-lang.org/tools/insta
 
 - To run the application:
 ```
-cargo run -p nes-emulator-desktop --release
+cargo run -p imnes-desktop --release
 ```
 
 By default, the joypad bindings are set to:

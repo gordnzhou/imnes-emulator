@@ -1,9 +1,9 @@
 [package]
-name = "nes-emulator-desktop"
+name = "imnes-desktop"
 version = "0.1.0"
 edition = "2021"
 authors = ["Gordon Zhou gordonzhou223@gmail.com"]
-repository = "https://github.com/gordnzhou/nes-emulator.git"
+repository = "https://github.com/gordnzhou/imnes-emulator"
 
 [dependencies]
 nesemulib = { path = "../nesemulib" }

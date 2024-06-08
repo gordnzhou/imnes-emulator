@@ -1,5 +1,5 @@
 [workspace]
-members = ["nesemulib", "nes-emulator-desktop", "nes-emulator-sdl2"]
+members = ["nesemulib", "imnes-desktop", "nes-emulator-sdl2"]
 
 [profile.dev]
 opt-level = 1
